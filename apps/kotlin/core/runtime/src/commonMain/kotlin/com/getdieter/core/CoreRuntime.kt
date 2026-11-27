@@ -77,6 +77,7 @@ import com.getdieter.core.providers.ProviderMachine
 import com.getdieter.core.providers.ProviderRecords
 import com.getdieter.core.providers.ProviderSignIn
 import com.getdieter.core.providers.providerMachines
+import com.getdieter.core.reviews.CodeReviewCalls
 import com.getdieter.core.routing.RouteKind
 import com.getdieter.core.routing.RouteSelector
 import com.getdieter.core.routing.RoutingPolicy
@@ -255,6 +256,9 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
     val mailbox =
         Mailbox(sessions, outbox, platform.settings, scope, platform.logger, ::mailProjection)
     val board = BoardOperations(sessions, workspace, choice)
+
+    /** The code reviewer's setting, conversations' switches, and the reviews users start. */
+    val codeReviews = CodeReviewCalls(sessions, workspace, choice, board)
     val navigationKv =
         SharedKv(
             NAVIGATION_NAMESPACE,

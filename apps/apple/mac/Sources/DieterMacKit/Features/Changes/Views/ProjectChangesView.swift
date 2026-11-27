@@ -535,6 +535,7 @@ private struct ProjectChangesNavigator: View {
                     .accessibilityIdentifier("project-changes.shared").e2eTarget("project-changes.shared")
             }
             Spacer(minLength: 4)
+            ReviewChangesButton(iconOnly: true, size: 26)
             ProjectShipActions(model: model, access: access, iconOnly: true, size: 26)
             ProjectRefreshButton(model: model, size: 26)
         }

@@ -1,0 +1,39 @@
+diff --git a/internal/git/operations/manager.go b/internal/git/operations/manager.go
+index 4dc7d9d0..29550895 100644
+--- a/internal/git/operations/manager.go
++++ b/internal/git/operations/manager.go
+@@ -1047,7 +1047,7 @@ func (m *Manager) checkInitialCheckout(ctx context.Context, directory, commit st
+ 			if err != nil {
+ 				return err
+ 			}
+-			if i == len(parts)-1 || !info.IsDir() {
++			if i == len(parts)-1 && !info.IsDir() {
+ 				return fault.Invalidf("initial merge would overwrite existing checkout path %s", name)
+ 			}
+ 		}
+diff --git a/internal/git/unborn.go b/internal/git/unborn.go
+index 0b3f7ae3..c5e8e37c 100644
+--- a/internal/git/unborn.go
++++ b/internal/git/unborn.go
+@@ -24,7 +24,7 @@ func UnbornHead(ctx context.Context, runner Runner, directory, branch string) (b
+ 		return false, nil
+ 	}
+ 	var command *CommandError
+-	if errors.As(err, &command) && command.ExitCode == 1 {
++	if errors.As(err, &command) && command.ExitCode != 0 {
+ 		return true, nil
+ 	}
+ 	return false, err
+diff --git a/internal/git/workspace/manager.go b/internal/git/workspace/manager.go
+index 80155609..af4a3ea2 100644
+--- a/internal/git/workspace/manager.go
++++ b/internal/git/workspace/manager.go
+@@ -180,7 +180,7 @@ func (m *Manager) provision(ctx context.Context, detail model.CardDetail, value
+ 		if err != nil {
+ 			return value, err
+ 		}
+-		defer release()
++		_ = release
+ 	}
+ 	currentBranch, _ := m.output(ctx, projectPath, "symbolic-ref", "--quiet", "--short", "HEAD")
+ 	if value.BaseBranch == "" {

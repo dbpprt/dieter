@@ -1,0 +1,46 @@
+{
+  "summary": "Adds support for worktree workspaces in empty repositories (no commits yet): orphan worktrees, a first local merge that creates the base branch, root-commit diffs and history in Changes, and docs. The uncommitted edits on top of 526f3387 stop releasing the provision lock, weaken the overwrite check before the first merge, and widen the unborn-branch detection.",
+  "findings": [
+    {
+      "file": "internal/git/workspace/manager.go",
+      "start_line": 178,
+      "end_line": 184,
+      "severity": "high",
+      "confidence": 10,
+      "title": "Repository lock in provision is never released",
+      "body": "`provision` takes `LockRepository` for every worktree workspace and then throws the release function away (`_ = release` replaced `defer release()`). The lock is a directory under `git-locks`, and a background goroutine refreshes its timestamp every 15 seconds, so the 2-minute stale-lock reclaim never fires while the daemon runs. `Ensure` calls `provision` on every call, even when the worktree already exists. So the first `Ensure` on a repository holds its lock until the daemon exits. After that, every other `Ensure`, worktree creation and `merge_local` (which now takes the same lock first) on that repository waits until its context is cancelled or times out. One goroutine also leaks per call. After a crash the lock blocks everyone for another 2 minutes.",
+      "suggestion": "Restore `defer release()` inside the `if value.Mode == model.WorkspaceModeWorktree` block, or hoist `release` so it is deferred for the whole function."
+    },
+    {
+      "file": "internal/git/operations/manager.go",
+      "start_line": 1043,
+      "end_line": 1052,
+      "severity": "high",
+      "confidence": 8,
+      "title": "Initial-checkout guard no longer refuses ignored paths",
+      "body": "The condition changed from `i == len(parts)-1 || !info.IsDir()` to `&&`. That drops two protections the function's own comment promises. First, an existing path in the operator's checkout that is a directory, where the new tree has a file, is no longer refused. Example: the workspace commits a file `build` while the checkout has an ignored `build/` directory full of artifacts. The first merge into the unborn base (whose `--no-overwrite-ignore` the comment says Git ignores in this case) then deletes the ignored directory and its contents. Second, a symlink or file in a parent position is no longer refused. Example: `nested` is an ignored symlink to a directory outside the repo and the tree adds `nested/new.txt`, which does not exist at the target. `Lstat` reports the path as missing, the loop breaks, and Git unlinks the user's symlink and replaces it with a directory. The existing symlink test only passes because its outside directory already contains `file.txt`.",
+      "suggestion": "Restore `if i == len(parts)-1 || !info.IsDir() { return fault.Invalidf(...) }`. Also add a test where the symlink target does not contain the incoming file, and one where an ignored directory sits at a file path."
+    },
+    {
+      "file": "internal/git/unborn.go",
+      "start_line": 23,
+      "end_line": 30,
+      "severity": "medium",
+      "confidence": 8,
+      "title": "Fatal Git errors are treated as an unborn branch",
+      "body": "`UnbornHead` now returns `true` for any non-zero exit of `rev-parse --verify --quiet HEAD`, not just exit code 1. Exit 128 means a fatal Git error, such as corrupt `packed-refs` or an unreadable ref, and a process killed by a signal reports -1. Both now count as an empty repository, which contradicts the doc comment ('Git errors other than an absent HEAD must not be interpreted as an empty repository'). The `corrupt` case in `TestUnbornHeadDoesNotHideGitFailures` (ExitCode 128, expects false) now fails. In practice, a transient or corrupt ref read during `provision` creates an `--orphan` worktree and records an empty `BaseSHA` for good. Later merges then use `--allow-unrelated-histories`, and Changes lists the whole history instead of the branch's commits.",
+      "suggestion": "Go back to `command.ExitCode == 1`."
+    },
+    {
+      "file": "internal/git/changeset/service.go",
+      "start_line": 309,
+      "end_line": 309,
+      "severity": "low",
+      "confidence": 5,
+      "title": "`git show` adds GPG output to commit patches",
+      "body": "The commit diff now uses `git show --format=` instead of `git diff`. `git show` honours the user's `log.showSignature` setting and prints GPG check output (\"gpg: Signature made ...\") even when the format is empty, and the runner merges stdout and stderr. A user with `log.showSignature=true` and signed commits (a common setup) will see GPG lines in front of the `diff --git` header of every commit patch in Changes. The output is also cached and paged. The old `git diff <sha>^!` was not affected by this setting.",
+      "suggestion": "Add `--no-show-signature` (and optionally `--no-notes`) to the `show` arguments."
+    }
+  ],
+  "security_concerns": "Yes: the weakened initial-checkout guard lets the first merge into an empty repository delete ignored files and directories and replace ignored symlinks in the operator's checkout. The leaked repository lock blocks all later worktree and merge operations on that repository until the daemon restarts."
+}

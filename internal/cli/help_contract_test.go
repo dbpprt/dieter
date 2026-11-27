@@ -64,6 +64,8 @@ var rpcCommand = map[string]string{
 	"SetDefaultProviderAccount": "provider default", "StartProviderLogin": "provider login", "WatchProviderLogin": "provider login", "SubmitProviderLoginInput": "provider login",
 	"CancelProviderLogin": "provider login", "SignOutProviderAccount": "provider logout", "CheckProviderLogin": "provider check", "RefreshProviderUsage": "provider usage",
 	"ConsumeProviderUsageReset": "provider reset", "GetProviderTurnToken": "provider token",
+	"GetReviewerSettings": "reviewer show", "UpdateReviewerSettings": "reviewer update", "SetCardCodeReview": "card reviewer",
+	"StartCodeReview": "card review", "GetCodeReview": "card reviews", "ListCodeReviews": "card reviews",
 }
 
 func TestEveryDaemonRPCMapsToCLICommand(t *testing.T) {

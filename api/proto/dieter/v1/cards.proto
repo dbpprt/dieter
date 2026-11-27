@@ -69,6 +69,8 @@ message CreateConversationRequest {
   bool mail_access = 26;
   // Provider account for the first turn; empty uses the provider default.
   string account_id = 27;
+  // Give this conversation's agent turns the code reviewer (ReviewService).
+  bool code_review = 28;
 }
 
 message ListChatsRequest {

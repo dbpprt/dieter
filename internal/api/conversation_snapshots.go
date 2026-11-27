@@ -50,7 +50,8 @@ func conversationInput(request *dieterv1.CreateConversationRequest) (engine.Card
 		WorkspaceMode: workspaceMode, WorkspaceBranch: request.GetWorkspaceBranch(),
 		WorkspaceBaseBranch: request.GetWorkspaceBaseBranch(), WorkspaceBaseRemote: request.GetWorkspaceBaseRemote(),
 		RemotePublishMode: request.GetRemotePublishMode(), VaultAccess: request.GetVaultAccess(), MailAccess: request.GetMailAccess(),
-		AccountID: strings.TrimSpace(request.GetAccountId()),
+		CodeReview: request.GetCodeReview(),
+		AccountID:  strings.TrimSpace(request.GetAccountId()),
 	}, nil
 }
 
@@ -130,7 +131,7 @@ func scheduleInput(request *dieterv1.SaveScheduleRequest) (schedules.Input, erro
 		PromptTemplate: value.GetPromptTemplate(), Provider: value.GetProvider(), Model: value.GetModel(),
 		Effort: value.GetEffort(), ProviderOptions: cloneProtoStringMap(value.GetProviderOptions()), LabelIDs: append([]string(nil), value.GetLabelIds()...),
 		OpenCardPolicy: value.GetOpenCardPolicy(), MisfirePolicy: value.GetMisfirePolicy(),
-		WorkspaceMode: workspaceMode, VaultAccess: value.GetVaultAccess(), MailAccess: value.GetMailAccess(),
+		WorkspaceMode: workspaceMode, VaultAccess: value.GetVaultAccess(), MailAccess: value.GetMailAccess(), CodeReview: value.GetCodeReview(),
 		AccountID: strings.TrimSpace(value.GetAccountId()),
 	}, nil
 }

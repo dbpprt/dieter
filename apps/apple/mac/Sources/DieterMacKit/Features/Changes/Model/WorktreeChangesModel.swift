@@ -86,6 +86,10 @@ final class WorktreeChangesModel {
     @ObservationIgnored private var bound = ClientReviewTarget()
     @ObservationIgnored private var queued: Task<Void, Never>?
     @ObservationIgnored private var shownToast = ""
+    /// The core reported the bound review, so it is known where its changes live.
+    @ObservationIgnored private var reported = false
+    /// A file `show(path:)` asked for before the review reported.
+    @ObservationIgnored private var pendingPath: String?
 
     init() {
         let scope = "review-\(UUID().uuidString)"
@@ -149,7 +153,28 @@ final class WorktreeChangesModel {
         conflictTitle = ""; conflictPrompt = ""; movesToDone = false; pullRequest = nil
         mergeReadiness = ClientMergeReadiness()
         isCheckout = false; activity = ""; outdatedComments = 0; blockedReason = ""
+        reported = false; pendingPath = nil
         checkout.resetEmbedded()
+    }
+
+    /// Shows `path`'s diff, e.g. a code review finding's file: in the
+    /// worktree's review, or in the shared checkout's unstaged half (its
+    /// staged one when only that has it). A review that has not reported yet
+    /// shows it once it does.
+    func show(path: String) {
+        guard !path.isEmpty else { return }
+        guard reported else {
+            pendingPath = path
+            return
+        }
+        pendingPath = nil
+        if isCheckout {
+            let unstaged = checkout.unstagedFiles.contains { $0.path == path }
+            let staged = !unstaged && checkout.stagedFiles.contains { $0.path == path }
+            checkout.select(ProjectChangeSelection(path: path, section: staged ? "staged" : "unstaged"))
+        } else {
+            Task { await loadConversationDiff(path: path) }
+        }
     }
 
     /// Lays the diff out side by side or in one column; the core keeps the
@@ -213,6 +238,10 @@ final class WorktreeChangesModel {
         if outdatedComments != Int(slice.outdatedComments) { outdatedComments = Int(slice.outdatedComments) }
         let blocked = slice.hasAvailability ? slice.availability.blockedReason : ""
         if blockedReason != blocked { blockedReason = blocked }
+        if !reported {
+            reported = true
+            if let pendingPath { show(path: pendingPath) }
+        }
         if !slice.toast.isEmpty, slice.toast != shownToast {
             shownToast = slice.toast
             showWorkspaceToast(slice.toast)

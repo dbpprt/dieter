@@ -73,6 +73,12 @@ func ValidateKV(r crdt.Record) error {
 			}
 			continue
 		}
+		if ReviewerNamespaceKind(ns) {
+			if err := validateReviewer(r.ID, v.Value); err != nil {
+				return err
+			}
+			continue
+		}
 		// Navigation is a registered portable consumer of the general JSON store.
 		if ns != "navigation" {
 			continue

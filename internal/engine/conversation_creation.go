@@ -66,6 +66,7 @@ type CardInput struct {
 	LabelIDs                                                     []string
 	ProviderOptions                                              map[string]string
 	DeferStart, AutoGenerateTitle, VaultAccess, MailAccess       bool
+	CodeReview                                                   bool
 	// AccountID is the provider account of the first turn; empty uses the
 	// provider default.
 	AccountID   string
@@ -148,7 +149,7 @@ func (s *Service) createConversation(ctx context.Context, input CardInput, scope
 			return model.Card{}, err
 		}
 	}
-	createInput := kanban.CreateCardInput{CheckoutID: input.CheckoutID, Project: project.ID, Board: input.Board, ID: input.ID, Lane: input.Lane, Title: input.Title, Prompt: input.Prompt, Provider: provider, Model: input.Model, Effort: input.Effort, ProviderOptions: input.ProviderOptions, LabelIDs: input.LabelIDs, Origin: input.Origin, WorkspaceMode: input.WorkspaceMode, WorkspaceBranch: input.WorkspaceBranch, WorkspaceBaseBranch: input.WorkspaceBaseBranch, WorkspaceBaseRemote: input.WorkspaceBaseRemote, RemotePublishMode: input.RemotePublishMode, VaultAccess: input.VaultAccess, MailAccess: input.MailAccess, ProviderAccountID: input.AccountID}
+	createInput := kanban.CreateCardInput{CheckoutID: input.CheckoutID, Project: project.ID, Board: input.Board, ID: input.ID, Lane: input.Lane, Title: input.Title, Prompt: input.Prompt, Provider: provider, Model: input.Model, Effort: input.Effort, ProviderOptions: input.ProviderOptions, LabelIDs: input.LabelIDs, Origin: input.Origin, WorkspaceMode: input.WorkspaceMode, WorkspaceBranch: input.WorkspaceBranch, WorkspaceBaseBranch: input.WorkspaceBaseBranch, WorkspaceBaseRemote: input.WorkspaceBaseRemote, RemotePublishMode: input.RemotePublishMode, VaultAccess: input.VaultAccess, MailAccess: input.MailAccess, CodeReview: input.CodeReview, ProviderAccountID: input.AccountID}
 	var card model.Card
 	if scope == model.ConversationScopeChat {
 		card, err = s.Store.Kanban.CreateChat(createInput)

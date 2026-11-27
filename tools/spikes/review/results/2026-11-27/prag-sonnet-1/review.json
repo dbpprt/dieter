@@ -1,0 +1,28 @@
+{
+  "review": {
+    "estimated_effort_to_review_[1-5]": 4,
+    "relevant_tests": "Yes\n",
+    "key_issues_to_review": [
+      {
+        "relevant_file": "internal/git/workspace/manager.go\n",
+        "issue_header": "Leaked Repository Lock\n",
+        "issue_content": "`provision` acquires the repository lock for worktree mode and then discards the release function with `_ = release`. The old code used `defer release()`. The lock is never released, so every later operation that needs the same project lock (another card's `provision`, `mergeLocal`, and so on) can block indefinitely. The new tests may not catch this if `LockRepository` is re-entrant for the same checkout context. Whether the lock is re-entrant is the one thing I couldn't confirm from the diff. Even so, the hold would leak across cards. The release should be deferred, or the lock scoped to the section that needs it.\n",
+        "start_line": 178,
+        "end_line": 184
+      },
+      {
+        "relevant_file": "internal/git/changeset/service.go\n",
+        "issue_header": "Merge Commit Diff Regression\n",
+        "issue_content": "The commit diff changed from `git diff <sha>^!` to `git show --format= --root <sha>^0`. For a merge commit, `git diff X^!` showed the diff against the first parent. `git show` instead produces a combined diff (`--cc`), which is empty for clean merges and has a different format otherwise. The `merge_commit` strategy creates merge commits in the workspace history, so selecting one in the commit list can return an empty or differently formatted patch. Adding `-m --first-parent`, or `--diff-merges=first-parent` on Git 2.31 and later, would keep the old behavior.\n",
+        "start_line": 309,
+        "end_line": 309
+      }
+    ],
+    "security_concerns": "No\n"
+  },
+  "usage": {},
+  "coverage": {
+    "files_not_reviewed": [],
+    "files_partially_reviewed": []
+  }
+}

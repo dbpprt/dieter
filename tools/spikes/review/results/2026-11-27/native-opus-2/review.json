@@ -1,0 +1,46 @@
+{
+  "summary": "Adds support for worktrees whose base branch has no commits yet (unborn base): orphan worktree creation, merges that make the first commit, cleanup, commit lists and per-commit diffs. The repository lock now covers the whole of worktree creation and local merges. The uncommitted edits on top of that commit drop the lock release, loosen the overwrite check before the first merge, and widen the unborn detection.",
+  "findings": [
+    {
+      "file": "internal/git/workspace/manager.go",
+      "start_line": 178,
+      "end_line": 184,
+      "severity": "high",
+      "confidence": 9,
+      "title": "Repository lock is never released",
+      "body": "provision takes the repository lock and then throws away the release function (`_ = release`). The lock is a directory that a goroutine touches every 15 seconds, so the 2-minute stale cleanup in `lock()` never reclaims it. After the first worktree is created in a repository, every later LockRepository call on the same repository waits until its context ends: creating other worktrees, merge_local (operations/manager.go:847) and archive (archive.go:86). With a context that never ends they hang for good. This lasts until the daemon restarts. Tests that create two workspaces in one repository, such as TestUnbornWorktreesCreatedAroundFirstCommit, or that create one and then merge, will hang.",
+      "suggestion": "Restore `defer release()` right after the LockRepository call succeeds."
+    },
+    {
+      "file": "internal/git/operations/manager.go",
+      "start_line": 1050,
+      "end_line": 1052,
+      "severity": "high",
+      "confidence": 8,
+      "title": "Overwrite check misses ignored directories",
+      "body": "Changing `||` to `&&` means checkInitialCheckout refuses only when the last path part exists and is not a directory. If the operator's checkout has an ignored directory where the first commit has a file (ignored `out2/` holding `keep`, tree file `out2`), the check passes. Tested with git 2.54: `git merge --no-overwrite-ignore --ff-only` on an unborn branch then deletes the whole directory and writes the file. Ignored data is not in git, so it is gone for good. The same applies to an ignored symlink in a parent position whose target lacks the file: Lstat follows the link, gets ENOENT and stops, and git then removes the link. This defeats the safety check described in the comment just above the function.",
+      "suggestion": "Go back to `if i == len(parts)-1 || !info.IsDir()` so that any existing final part, or any parent that is not a real directory, is refused."
+    },
+    {
+      "file": "internal/git/unborn.go",
+      "start_line": 26,
+      "end_line": 29,
+      "severity": "medium",
+      "confidence": 8,
+      "title": "Any git failure now counts as unborn",
+      "body": "`ExitCode != 0` treats any failing `rev-parse --verify --quiet HEAD` as an unborn branch. That includes exit 128 (fatal errors such as unreadable refs or packed-refs) and -1 (process killed by a signal). The function's own comment forbids this, and TestUnbornHeadDoesNotHideGitFailures (case \"corrupt\", ExitCode 128, expects false) will fail. In practice, a base-branch lookup that fails for some other reason makes provision create an orphan worktree with an empty BaseSHA. That permanently marks the workspace as unborn-origin, so later merges pass --allow-unrelated-histories. mergeLocal would also take the first-commit path instead of reporting the error.",
+      "suggestion": "Restore `command.ExitCode == 1`, which is the documented exit code when `rev-parse --verify --quiet` finds no ref."
+    },
+    {
+      "file": "internal/git/changeset/service.go",
+      "start_line": 309,
+      "end_line": 309,
+      "severity": "low",
+      "confidence": 6,
+      "title": "Commit diffs pick up signature lines",
+      "body": "Switching per-commit diffs from `git diff X^!` to `git show` brings in log options from the operator's config. With `log.showSignature=true` and signed commits, git show prints a verification line such as `Good \"git\" signature for ...` on stdout before `diff --git`, even with `--format=` (tested with git 2.54). The command doesn't sanitize config, so the patch sent to clients starts with text that isn't part of the diff. Every commit-diff view also runs gpg or ssh verification.",
+      "suggestion": "Add `--no-show-signature` (and `--no-notes` for safety) to the git show arguments."
+    }
+  ],
+  "security_concerns": "Yes: with the loosened check, the first merge into an empty repository can recursively delete ignored, unrecoverable data in the operator's checkout. No authentication or transport surface is touched."
+}

@@ -123,6 +123,22 @@ struct NewConversationSheet: View {
                             .e2eTarget("new-card.mail-access")
                     }
                     .help("Let this task's agent send you reports in Mail. Set only when creating.")
+                    LabeledContent("Code review") {
+                        HStack(spacing: 8) {
+                            Text("Let the agent ask a reviewer to check its changes")
+                            // The switch alone carries the target, so a flow's click lands on it.
+                            Toggle("Code review", isOn: $form.intent.codeReview)
+                                .labelsHidden()
+                                .toggleStyle(.switch)
+                                .controlSize(.small)
+                                .accessibilityIdentifier("code-review")
+                                .e2eTarget("code-review")
+                        }
+                    }
+                    .help(
+                        "The agent can ask a separate reviewer model to check its changes. "
+                            + "Switch it later from the conversation's menu."
+                    )
 
                     if preview.catalog == .none {
                         HStack(spacing: 8) {
@@ -177,14 +193,16 @@ struct NewConversationSheet: View {
 
             Divider()
             HStack(spacing: 10) {
-                Text(
+                let status =
                     !preview.problem.isEmpty
-                        ? preview.problem
-                        : (preview.defersStart
-                            ? "Saves a draft. Run it when you're ready." : "The agent will start right away.")
-                )
-                .font(.caption).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+                    ? preview.problem
+                    : (preview.defersStart
+                        ? "Saves a draft. Run it when you're ready." : "The agent will start right away.")
+                Text(status)
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("new-card.status")
+                    .e2eTarget("new-card.status", text: status)
                 Spacer(minLength: 8)
                 if submitting { ProgressView().controlSize(.small) }
                 Button("Cancel") { dismiss() }

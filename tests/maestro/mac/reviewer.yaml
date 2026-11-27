@@ -1,0 +1,73 @@
+# Maestro syntax, run in-app: Maestro has no macOS driver.
+# Code review: "Review changes" in a seeded mock conversation's Changes runs
+# the fixture's reviewer (the mock harness), and the review card shows in its
+# transcript. Settings › Code reviewer opens with the fixture's saved setting,
+# saves a change and restores it.
+# Flows share one fixture and the sidebar's expanded projects, and the
+# interpreter has no conditionals, so this flow opens the conversation from the
+# Inbox. A conversation no other flow opens keeps the review out of their way.
+# The creation and conversation switches are covered by the render tests and
+# the mobile reviewer flow (new tasks take the machine's first agent here,
+# which reaches a real provider, and menus cannot be picked in-app).
+appId: com.getdieter.mac
+name: Mac code review
+tags: [smoke]
+---
+- launchApp
+- tapOn:
+    id: sidebar.inbox
+- assertVisible:
+    id: destination.Inbox
+- extendedWaitUntil:
+    visible:
+      id: 'inbox\.title\..+\.Polish the conversation timeline'
+    timeout: 60000
+- tapOn:
+    id: 'inbox\.title\..+\.Polish the conversation timeline'
+- tapOn:
+    id: conversation.content.fixed.changes
+- extendedWaitUntil:
+    visible:
+      id: project-changes.status
+    timeout: 30000
+- tapOn:
+    id: review-changes
+- tapOn:
+    id: conversation-tab-conversation
+- extendedWaitUntil:
+    visible:
+      id: "code-review-rev_.+"
+      text: "Code review"
+    timeout: 120000
+- takeScreenshot: mac-code-review-card
+# The reviewer setting: the fixture saved the mock harness.
+- tapOn:
+    id: sidebar.settings
+- tapOn:
+    id: settings.code-reviewer
+- extendedWaitUntil:
+    visible:
+      id: code-reviewer-depth-thorough
+    timeout: 30000
+- takeScreenshot: mac-code-reviewer-settings
+- tapOn:
+    id: code-reviewer-depth-thorough
+- tapOn:
+    id: code-reviewer-save
+- extendedWaitUntil:
+    visible:
+      id: code-reviewer-saved
+    timeout: 30000
+- tapOn:
+    id: code-reviewer-depth-quick
+- assertNotVisible:
+    id: code-reviewer-saved
+- tapOn:
+    id: code-reviewer-save
+- extendedWaitUntil:
+    visible:
+      id: code-reviewer-saved
+    timeout: 30000
+- assertNotVisible:
+    id: code-reviewer-error
+- takeScreenshot: mac-code-reviewer-saved

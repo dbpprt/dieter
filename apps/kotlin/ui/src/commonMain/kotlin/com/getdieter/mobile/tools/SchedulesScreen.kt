@@ -515,7 +515,7 @@ private fun ScheduleEditor(store: MobileStore, scheduleId: String, onDismiss: ()
             store.creation.update(store.creation.intent.value, choice)
         }
         SectionHeader("Behavior")
-        Group(listOf(0, 1, 2, 3, 4)) { index, position ->
+        Group(listOf(0, 1, 2, 3, 4, 5)) { index, position ->
             when (index) {
                 0 ->
                     PickerRow(
@@ -562,6 +562,19 @@ private fun ScheduleEditor(store: MobileStore, scheduleId: String, onDismiss: ()
                                 value.mail_access,
                                 { draft = value.copy(mail_access = it) },
                                 Modifier.testTag("schedule-mail-access"),
+                            )
+                        },
+                    )
+                5 ->
+                    ListRow(
+                        "Code review",
+                        position = position,
+                        subtitle = "Its agents can ask a reviewer model to check their changes",
+                        trailing = {
+                            DSwitch(
+                                value.code_review,
+                                { draft = value.copy(code_review = it) },
+                                Modifier.testTag("schedule-code-review"),
                             )
                         },
                     )

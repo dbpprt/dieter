@@ -147,6 +147,19 @@ private fun TimelineStepView(
             if (notice != null) PeerNoticeCard(notice, openUrl) { store?.openChannel(it) }
             else if (text.isNotEmpty()) RichText(text, openUrl)
         }
+        TimelineStepKind.TIMELINE_STEP_KIND_CODE_REVIEW -> {
+            val store = LocalMobileStore.current
+            step.code_review?.let { review ->
+                CodeReviewCard(
+                    review,
+                    openUrl,
+                    onLocation =
+                        store?.let { store ->
+                            { finding -> store.openChanges(view.card_id, finding.file_) }
+                        },
+                )
+            }
+        }
         else -> if (text.isNotEmpty()) RichText(text, openUrl)
     }
 }

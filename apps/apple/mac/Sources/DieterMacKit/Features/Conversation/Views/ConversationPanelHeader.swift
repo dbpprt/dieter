@@ -156,8 +156,10 @@ struct ConversationBreadcrumb: View {
                         .foregroundStyle(badge.conflicted ? DieterTheme.failed : DieterTheme.tertiary)
                         .help(badge.accessibilityLabel)
                 }
-                // What the agent may use beyond its workspace, fixed at creation.
-                if card.vaultAccess || card.mailAccess {
+                // What the agent may use beyond its workspace: the vault and
+                // mail, fixed at creation, and the code reviewer, switchable.
+                let reviewing = context.codeReview?.enabled == true
+                if card.vaultAccess || card.mailAccess || reviewing {
                     Text("·")
                     HStack(spacing: 6) {
                         if card.vaultAccess {
@@ -168,6 +170,12 @@ struct ConversationBreadcrumb: View {
                             Label("Mail", systemImage: "envelope.fill")
                                 .help("This conversation's agent may send you mail")
                                 .accessibilityIdentifier("conversation.mail-access")
+                        }
+                        if reviewing {
+                            Label("Code review", systemImage: "eye")
+                                .help("This conversation's agent can ask the code reviewer to check its changes")
+                                .accessibilityIdentifier("conversation.code-review")
+                                .e2eTarget("conversation.code-review")
                         }
                     }
                     .labelStyle(.titleAndIcon)

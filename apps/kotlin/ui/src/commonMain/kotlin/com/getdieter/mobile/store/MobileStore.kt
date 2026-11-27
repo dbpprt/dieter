@@ -66,6 +66,7 @@ class MobileStore(
     val screens: ScreensModel = ScreensModel(context)
     val devices: DevicesModel = DevicesModel(context)
     val providers: ProvidersModel = ProvidersModel(context)
+    val codeReview: CodeReviewModel = CodeReviewModel(context)
     val channels: ChannelsModel = ChannelsModel(context)
     val mail: MailModel = MailModel(context)
 
@@ -148,6 +149,16 @@ class MobileStore(
         if (current.tab == MobileTab.MORE && current.stack == stack) return
         routes.value = current.copy(tab = MobileTab.MORE).with(MobileTab.MORE, stack)
         syncNavigation()
+    }
+
+    /**
+     * Opens [cardId]'s Changes above the conversation with [path]'s diff shown, e.g. from a code
+     * review's finding.
+     */
+    fun openChanges(cardId: String, path: String) {
+        if (cardId.isEmpty()) return
+        push(MobileRoute.Pane(cardId, CardPane.CHANGES))
+        if (path.isNotEmpty()) review.select(path)
     }
 
     /**

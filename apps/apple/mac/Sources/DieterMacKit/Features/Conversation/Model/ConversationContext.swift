@@ -87,6 +87,24 @@ final class ConversationContext {
         get { composer.draft.attachments }
         set { composer.draft.attachments = newValue }
     }
+    /// The conversation's code reviewer: its switch and whether "Review
+    /// changes" can start a review; nil until the conversation's card is known.
+    var codeReview: ClientConversationCodeReview? { model.chrome.codeReview }
+    /// Switches the conversation's code reviewer; it applies from the agent's next turn.
+    func setCodeReview(enabled: Bool) async {
+        do { try await model.setCodeReview(enabled: enabled) } catch { show(error) }
+    }
+    /// Asks the code reviewer to review the conversation's changes now.
+    func startCodeReview() async {
+        do { try await model.startCodeReview() } catch { show(error) }
+    }
+    /// Shows the conversation's Changes with `path` selected, e.g. a code review finding's file.
+    func openChange(path: String) {
+        let id = selectedCardID ?? selectedChatID ?? ""
+        guard !id.isEmpty else { return }
+        content.showChanges(path: path, conversationID: id)
+        if !content.isPresented(for: id) { worktreeChanges.show(path: path) }
+    }
     /// Opens the agent channel of `projectID` on the conversation's machine.
     @ObservationIgnored var onOpenChannel: (String) -> Void = { _ in }
     func openChannel(projectID: String) { onOpenChannel(projectID) }

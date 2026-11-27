@@ -67,6 +67,8 @@ message Schedule {
   bool mail_access = 43;
   // Provider account the occurrences run on; empty uses the provider default.
   string account_id = 44;
+  // Cards created by this schedule get the code reviewer.
+  bool code_review = 45;
 }
 
 message ScheduleDraft {
@@ -93,6 +95,7 @@ message ScheduleDraft {
   bool vault_access = 41;
   bool mail_access = 42;
   string account_id = 43;
+  bool code_review = 44;
 }
 
 message SaveScheduleRequest {

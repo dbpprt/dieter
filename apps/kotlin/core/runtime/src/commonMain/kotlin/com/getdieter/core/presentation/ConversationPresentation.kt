@@ -11,8 +11,10 @@ import com.getdieter.api.v1.Subagent
 import com.getdieter.api.v1.TaskPlan
 import com.getdieter.api.v1.TaskPlanItem
 import com.getdieter.api.v1.UiMessage
+import com.getdieter.client.v1.ConversationCodeReview
 import com.getdieter.client.v1.ConversationState
 import com.getdieter.client.v1.QueuedMessageState
+import com.getdieter.client.v1.TimelineCodeReview
 import com.getdieter.core.board.CardOperation
 import com.getdieter.core.board.CardPolicy
 import com.getdieter.core.board.Cards
@@ -25,6 +27,7 @@ import com.getdieter.core.conversation.TurnFailure
 import com.getdieter.core.metadata.MachineMetadata
 import com.getdieter.core.outbox.OutboxPolicy
 import com.getdieter.core.outbox.OutboxView
+import com.getdieter.core.reviews.CodeReviews
 import com.getdieter.core.runtime.Timestamps
 import com.getdieter.core.store.WorkspaceView
 import kotlin.time.Instant
@@ -80,6 +83,8 @@ data class ConversationPresentation(
     val chat: Boolean,
     /** The timeline and live activity show reasoning traces. */
     val showReasoning: Boolean,
+    /** The conversation's code reviewer; null until its card is known. */
+    val codeReview: ConversationCodeReview? = null,
     private val pendingIds: Set<String>,
     private val acceptedIds: Set<String>,
     private val failedIds: Set<String>,
@@ -110,7 +115,9 @@ object ConversationPresenter {
      * Presents [view]. [fallbackCard] stands in until the conversation's own snapshot arrives;
      * [operation] is this client's start or cancel in flight, and a start still in [outbox] counts
      * as one. [harnesses] is the conversation machine's catalog, for context windows a step does
-     * not report. [cache] keeps per-message steps between presentations of the same conversation.
+     * not report and code reviews' harness names. [cache] keeps per-message steps between
+     * presentations of the same conversation. [codeReview] is the reviewer switch as this client
+     * shows it, else the card's.
      */
     fun present(
         view: ConversationView,
@@ -121,6 +128,7 @@ object ConversationPresenter {
         fallbackCard: Card? = null,
         harnesses: HarnessCatalog? = null,
         cache: TimelineCache? = null,
+        codeReview: Boolean? = null,
     ): ConversationPresentation {
         val conversation = view.conversation
         // Account previews may be ahead of a cached or delayed full transcript. They describe
@@ -166,21 +174,28 @@ object ConversationPresenter {
                 activity?.provider_status,
             )
         val turnFailure = TurnFailure.resolve(messages, activity?.status, reported?.runtime)
+        val timeline =
+            TimelineBuilder.build(
+                messages,
+                queuedIds = queue.mapTo(HashSet()) { it.id },
+                plans = latestPlans(conversation?.task_plans.orEmpty()),
+                subagents = conversation?.subagents.orEmpty(),
+                options =
+                    TimelineOptions(
+                        showReasoning = showReasoning,
+                        failedMessageId = turnFailure?.failedMessageId?.ifEmpty { null },
+                        harnessNames =
+                            harnesses
+                                ?.harnesses
+                                .orEmpty()
+                                .filter { it.name.isNotEmpty() }
+                                .associate { it.id to it.name },
+                    ),
+                cache = cache,
+            )
         return ConversationPresentation(
             card = card,
-            timeline =
-                TimelineBuilder.build(
-                    messages,
-                    queuedIds = queue.mapTo(HashSet()) { it.id },
-                    plans = latestPlans(conversation?.task_plans.orEmpty()),
-                    subagents = conversation?.subagents.orEmpty(),
-                    options =
-                        TimelineOptions(
-                            showReasoning = showReasoning,
-                            failedMessageId = turnFailure?.failedMessageId?.ifEmpty { null },
-                        ),
-                    cache = cache,
-                ),
+            timeline = timeline,
             loadedMessages = messages.size,
             runtime = runtime,
             activeTurn = activeTurn,
@@ -225,6 +240,10 @@ object ConversationPresenter {
                 LiveActivities.unfinishedPendingTools(live, activity?.pending_tools.orEmpty()),
             chat = card != null && Cards.isChat(card),
             showReasoning = showReasoning,
+            codeReview =
+                card?.let {
+                    CodeReviewState.of(it, codeReview ?: it.code_review, latestReview(timeline))
+                },
             pendingIds = outbox.pendingMessageIds,
             acceptedIds = outbox.acceptedIds,
             failedIds = outbox.failedIds,
@@ -245,7 +264,8 @@ object ConversationPresenter {
         showReasoning: Boolean = false,
         cache: TimelineCache? = null,
     ): ConversationPresentation {
-        val card = view.card ?: workspace.card(view.cardId)
+        val listed = workspace.card(view.cardId)
+        val card = view.card ?: listed
         return present(
             view,
             outbox,
@@ -255,6 +275,8 @@ object ConversationPresenter {
             fallbackCard = card,
             harnesses = view.daemonId?.let(machines::get)?.harnesses,
             cache = cache,
+            // The board's copy carries a switch in flight; the conversation's own may be older.
+            codeReview = listed?.code_review,
         )
     }
 
@@ -284,6 +306,7 @@ object ConversationPresenter {
             can_halt = presented.canHalt,
             chat = presented.chat,
             show_reasoning = presented.showReasoning,
+            code_review = presented.codeReview,
             queued_messages =
                 presented.queue.mapIndexed { index, message ->
                     val pending = presented.unconfirmed(message.id)
@@ -321,6 +344,17 @@ object ConversationPresenter {
     fun unsentTask(card: Card, messages: List<UiMessage>): String? =
         card.initial_prompt.trim().takeIf {
             it.isNotEmpty() && card.initial_prompt_sent_at.isEmpty() && messages.none(Parts::isUser)
+        }
+
+    /** The latest code review in [timeline]; null when it shows none. */
+    fun latestReview(timeline: Timeline): TimelineCodeReview? =
+        timeline.items.asReversed().firstNotNullOfOrNull { item ->
+            val steps =
+                when (item) {
+                    is TimelineItem.Message -> item.steps
+                    is TimelineItem.Activity -> item.steps
+                }
+            steps.lastOrNull { it.codeReview != null }?.codeReview
         }
 
     /** Each message's plan at its latest revision. */
@@ -374,4 +408,24 @@ object CardDetails {
     fun changedFiles(card: Card, reviewed: Changeset?): Int =
         if (WorkspaceMode.of(card) == WorkspaceMode.PROJECT) 0
         else reviewed?.files?.size ?: card.workspace?.changed_files ?: 0
+}
+
+/** A conversation's code reviewer, for its switch and the Changes pane's "Review changes". */
+object CodeReviewState {
+    /**
+     * [card]'s reviewer, [enabled] or not, with [latest] as its newest review. The switch and a new
+     * review need the conversation on its machine and not archived; a review waits for the running
+     * one.
+     */
+    fun of(card: Card, enabled: Boolean, latest: TimelineCodeReview?): ConversationCodeReview {
+        val known = OutboxPolicy.isServerBacked(card.id) && !card.archived
+        val running = latest?.status == CodeReviews.RUNNING
+        return ConversationCodeReview(
+            enabled = enabled,
+            can_toggle = known,
+            running = running,
+            can_start = known && !running,
+            latest = latest,
+        )
+    }
 }
