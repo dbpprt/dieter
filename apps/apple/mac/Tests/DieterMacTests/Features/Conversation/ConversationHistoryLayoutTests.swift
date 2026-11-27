@@ -123,8 +123,10 @@ import Testing
 
     func scroll(to offset: CGFloat) {
         // User input arrives after the preceding layout pass has committed.
-        // Flush its before-waiting observer before simulating the next gesture.
-        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.001))
+        // Flush its before-waiting observer before simulating the next gesture:
+        // a run that may return after handling a source can end before the
+        // loop ever reaches before-waiting, so let it run until it sleeps.
+        CFRunLoopRunInMode(.defaultMode, 0.005, false)
         scrollView.contentView.scroll(to: NSPoint(x: 0, y: offset))
         scrollView.reflectScrolledClipView(scrollView.contentView)
     }
