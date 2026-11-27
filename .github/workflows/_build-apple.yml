@@ -27,13 +27,13 @@ env:
   NO_COLOR: "1"
   LANG: en_US.UTF-8
   LC_ALL: en_US.UTF-8
-  DEVELOPER_DIR: /Applications/Xcode_26.5.app/Contents/Developer
+  DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
   DIETER_RELEASE_VERSION: ${{ inputs.version }}
   DIETER_RELEASE_BUILD: ${{ inputs.build }}
 
 jobs:
   mac:
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 75
     environment: apple-signing
     steps:
@@ -70,7 +70,7 @@ jobs:
           if-no-files-found: warn
 
   ios:
-    runs-on: macos-26
+    runs-on: xcode-27
     # The Kotlin/Native release link alone has taken 40 to 113 minutes on hosted runners.
     timeout-minutes: 150
     environment: apple-signing
@@ -99,7 +99,7 @@ jobs:
           compression-level: 0
 
   harness-runtime:
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -121,7 +121,7 @@ jobs:
 
   daemon:
     needs: harness-runtime
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 60
     environment: apple-signing
     steps:

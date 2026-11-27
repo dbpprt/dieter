@@ -46,7 +46,7 @@ xcbeautify = { version = "3.2.1", os = ["macos"] }
 maestro = "cli-2.12.1"
 
 # Release signing and OCI publication (CI installs them only in release jobs).
-cosign = "3.1.5"
+cosign = "3.1.6"
 oras = "1.4.0"
 shellcheck = "0.11.0"
 

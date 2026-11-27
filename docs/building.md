@@ -26,7 +26,7 @@ mise does not install platform SDKs. Install only what your change needs:
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
 | Daemon, CLI, gateway     | Go and Node.js 22.19+ with npm (both from mise), Git                                                                      |
 | Kotlin core, Android app | Java 21 (mise), Android SDK with platform 37.1 (`ANDROID_HOME` or `sdk.dir` in an ignored `apps/kotlin/local.properties`) |
-| macOS and iOS apps       | Xcode 26.5+ on Apple Silicon; an iOS simulator runtime for iOS                                                            |
+| macOS and iOS apps       | Xcode 27+ on Apple Silicon (CI and releases use 27.2); an iOS simulator runtime for iOS                                   |
 | Website                  | Hugo extended (mise)                                                                                                      |
 | Gateway deployment tests | Docker with Buildx (Docker Desktop, OrbStack or colima)                                                                   |
 

@@ -255,10 +255,10 @@ jobs:
   apple:
     needs: plan
     if: needs.plan.outputs.apple == 'true'
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 75
     env:
-      DEVELOPER_DIR: /Applications/Xcode_26.5.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -276,8 +276,8 @@ jobs:
       - &apple-cache-restore
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          key: apple-v2-${{ runner.arch }}-xcode26.5-${{ github.job }}-${{ hashFiles('apps/apple/**/Package.resolved', 'native/macos/Package.swift', 'apps/kotlin/gradle/libs.versions.toml') }}
-          restore-keys: apple-v2-${{ runner.arch }}-xcode26.5-${{ github.job }}-
+          key: apple-v2-${{ runner.arch }}-xcode27.2-${{ github.job }}-${{ hashFiles('apps/apple/**/Package.resolved', 'native/macos/Package.swift', 'apps/kotlin/gradle/libs.versions.toml') }}
+          restore-keys: apple-v2-${{ runner.arch }}-xcode27.2-${{ github.job }}-
           path: &apple-cache-paths |
             ~/.konan
             apps/apple/DieterKit/.build
@@ -313,7 +313,7 @@ jobs:
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: github.ref == 'refs/heads/main' && !cancelled()
         with:
-          key: apple-v2-${{ runner.arch }}-xcode26.5-${{ github.job }}-${{ hashFiles('apps/apple/**/Package.resolved', 'native/macos/Package.swift', 'apps/kotlin/gradle/libs.versions.toml') }}
+          key: apple-v2-${{ runner.arch }}-xcode27.2-${{ github.job }}-${{ hashFiles('apps/apple/**/Package.resolved', 'native/macos/Package.swift', 'apps/kotlin/gradle/libs.versions.toml') }}
           path: *apple-cache-paths
       - uses: mikepenz/action-junit-report@a16be3a69023e9bd7e748ede768b3282ea7b30ce # v6.7.1
         if: always()
@@ -337,14 +337,14 @@ jobs:
   ios:
     needs: plan
     if: needs.plan.outputs.ios == 'true'
-    runs-on: macos-26
+    runs-on: xcode-27
     # Cold Release framework builds (any Kotlin catalog change misses the
     # cache) took 108 to 113 minutes, followed by 15 to 23 minutes for Xcode.
     # Retain the full 25-minute Maestro deadline plus setup, evidence upload,
     # cache saving, and cleanup.
     timeout-minutes: 200
     env:
-      DEVELOPER_DIR: /Applications/Xcode_26.5.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -372,7 +372,7 @@ jobs:
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: github.ref == 'refs/heads/main' && !cancelled()
         with:
-          key: apple-v2-${{ runner.arch }}-xcode26.5-${{ github.job }}-${{ hashFiles('apps/apple/**/Package.resolved', 'native/macos/Package.swift', 'apps/kotlin/gradle/libs.versions.toml') }}
+          key: apple-v2-${{ runner.arch }}-xcode27.2-${{ github.job }}-${{ hashFiles('apps/apple/**/Package.resolved', 'native/macos/Package.swift', 'apps/kotlin/gradle/libs.versions.toml') }}
           path: *apple-cache-paths
       - uses: mikepenz/action-junit-report@a16be3a69023e9bd7e748ede768b3282ea7b30ce # v6.7.1
         if: always()
