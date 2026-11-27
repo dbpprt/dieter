@@ -77,7 +77,7 @@ func (api *providerAccountsAPI) UpdateProviderAccount(ctx context.Context, r *di
 	if err != nil {
 		return nil, err
 	}
-	value, err := service.Update(ctx, r.GetAccountId(), r.Label, r.IncludeInSummary)
+	value, err := service.Update(ctx, r.GetAccountId(), r.Label, r.IncludeInSummary, r.OmpAccess)
 	if err != nil {
 		return nil, err
 	}
@@ -268,7 +268,7 @@ func (api *providerAccountsAPI) ConsumeProviderUsageReset(ctx context.Context, r
 	return &dieterv1.ConsumeProviderUsageResetResponse{Outcome: outcome, Account: protoProviderAccount(value)}, nil
 }
 
-func (api *providerAccountsAPI) GetProviderTurnToken(ctx context.Context, _ *dieterv1.GetProviderTurnTokenRequest) (*dieterv1.ProviderTurnToken, error) {
+func (api *providerAccountsAPI) GetProviderTurnToken(ctx context.Context, r *dieterv1.GetProviderTurnTokenRequest) (*dieterv1.ProviderTurnToken, error) {
 	service, err := api.service()
 	if err != nil {
 		return nil, err
@@ -286,11 +286,26 @@ func (api *providerAccountsAPI) GetProviderTurnToken(ctx context.Context, _ *die
 	if card.ProviderAccountID == "" {
 		return nil, fault.New(fault.FailedPrecondition, "this turn runs on no provider account")
 	}
-	token, expires, err := service.TurnToken(ctx, card.ProviderAccountID)
+	var token string
+	var expires time.Time
+	if kind := r.GetProvider(); kind != dieterv1.ProviderKind_PROVIDER_KIND_UNSPECIFIED {
+		// Oh My Pi asks per provider: its implementation model and its
+		// advisor may run on accounts of different providers.
+		if card.Provider != "omp" {
+			return nil, fault.New(fault.FailedPrecondition, "only Oh My Pi turns ask for a provider's token")
+		}
+		token, expires, err = service.OMPTurnToken(ctx, providerName(kind), card.ProviderAccountID, card.ProviderOptions["advisor_account"])
+	} else {
+		token, expires, err = service.TurnToken(ctx, card.ProviderAccountID)
+	}
 	if err != nil {
 		return nil, err
 	}
-	return &dieterv1.ProviderTurnToken{Token: token, ExpiresAt: expires.UTC().Format(time.RFC3339)}, nil
+	response := &dieterv1.ProviderTurnToken{Token: token}
+	if !expires.IsZero() {
+		response.ExpiresAt = expires.UTC().Format(time.RFC3339)
+	}
+	return response, nil
 }
 
 func providerName(kind dieterv1.ProviderKind) string {
@@ -444,7 +459,7 @@ func protoProviderTokens(value *accounts.TokenUsage) *dieterv1.ProviderTokenUsag
 func protoProviderAccount(value accounts.Account) *dieterv1.ProviderAccount {
 	result := &dieterv1.ProviderAccount{
 		Id: value.ID, Provider: providerKind(value.Provider), Label: value.Label, Method: loginMethods[value.Method],
-		Identity: protoProviderIdentity(value.Identity), IncludeInSummary: value.IncludeInSummary, IsDefault: value.IsDefault,
+		Identity: protoProviderIdentity(value.Identity), IncludeInSummary: value.IncludeInSummary, IsDefault: value.IsDefault, OmpAccess: value.OMPAccess,
 		Usage: protoProviderUsage(value.Usage), DieterTokens: protoProviderTokens(value.DieterTokens),
 		CreatedAt: value.CreatedAt, CreatedBy: value.CreatedBy,
 	}

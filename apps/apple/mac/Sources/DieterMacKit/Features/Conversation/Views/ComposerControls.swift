@@ -304,6 +304,16 @@ struct AgentComposerMenus: View {
             .accessibilityIdentifier("\(identifierPrefix).account")
             .e2eTarget("\(identifierPrefix).account", text: controls.accountLabel)
             .disabled(!controls.accountEnabled)
+        } else if !controls.accountHint.isEmpty {
+            // No account the agent may use, e.g. Oh My Pi without an allowed Claude login.
+            Image(systemName: "person.crop.circle.badge.exclamationmark")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(DieterTheme.amber)
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+                .quickHelp(controls.accountHint)
+                .accessibilityLabel(controls.accountHint)
+                .accessibilityIdentifier("\(identifierPrefix).account-hint")
         }
         ComposerSelectionMenu(
             title: compact ? controls.modelLabel.replacingOccurrences(of: "GPT-", with: "") : controls.modelLabel,

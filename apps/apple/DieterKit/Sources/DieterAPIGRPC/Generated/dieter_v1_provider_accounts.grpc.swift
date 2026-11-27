@@ -553,8 +553,10 @@ extension Dieter_V1_ProviderAccountService {
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > Returns the current access token of the calling turn's own Sign in with
-        /// > ChatGPT account. Local route only, and only with a live turn token.
+        /// > Returns the current access token of one of the calling turn's own
+        /// > accounts: its Sign in with ChatGPT account, or, for Oh My Pi turns, the
+        /// > account the turn uses for the requested provider. Local route only, and
+        /// > only with a live turn token.
         ///
         /// - Parameters:
         ///   - request: A request containing a single `Dieter_V1_GetProviderTurnTokenRequest` message.
@@ -1046,8 +1048,10 @@ extension Dieter_V1_ProviderAccountService {
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > Returns the current access token of the calling turn's own Sign in with
-        /// > ChatGPT account. Local route only, and only with a live turn token.
+        /// > Returns the current access token of one of the calling turn's own
+        /// > accounts: its Sign in with ChatGPT account, or, for Oh My Pi turns, the
+        /// > account the turn uses for the requested provider. Local route only, and
+        /// > only with a live turn token.
         ///
         /// - Parameters:
         ///   - request: A request containing a single `Dieter_V1_GetProviderTurnTokenRequest` message.
@@ -1461,8 +1465,10 @@ extension Dieter_V1_ProviderAccountService.ClientProtocol {
     ///
     /// > Source IDL Documentation:
     /// >
-    /// > Returns the current access token of the calling turn's own Sign in with
-    /// > ChatGPT account. Local route only, and only with a live turn token.
+    /// > Returns the current access token of one of the calling turn's own
+    /// > accounts: its Sign in with ChatGPT account, or, for Oh My Pi turns, the
+    /// > account the turn uses for the requested provider. Local route only, and
+    /// > only with a live turn token.
     ///
     /// - Parameters:
     ///   - request: A request containing a single `Dieter_V1_GetProviderTurnTokenRequest` message.
@@ -1922,8 +1928,10 @@ extension Dieter_V1_ProviderAccountService.ClientProtocol {
     ///
     /// > Source IDL Documentation:
     /// >
-    /// > Returns the current access token of the calling turn's own Sign in with
-    /// > ChatGPT account. Local route only, and only with a live turn token.
+    /// > Returns the current access token of one of the calling turn's own
+    /// > accounts: its Sign in with ChatGPT account, or, for Oh My Pi turns, the
+    /// > account the turn uses for the requested provider. Local route only, and
+    /// > only with a live turn token.
     ///
     /// - Parameters:
     ///   - message: request message to send.

@@ -115,6 +115,34 @@ class ProvidersPresenterTest {
     }
 
     @Test
+    fun claudeAccountsOfferOhMyPiAccessOffByDefault() {
+        val access =
+            ProviderFixtures.view(
+                account(CLAUDE_WORK, "claude", "Work", omp = true),
+                account(CLAUDE_HOME, "claude", "Home"),
+                // ChatGPT records never carry it; a stray flag reads as off.
+                ProviderFixtures.entry(
+                    ProviderRecords.ACCOUNTS,
+                    CHATGPT_TEAM,
+                    """{"provider":"chatgpt","label":"Team","ompAccess":true}""",
+                ),
+            )
+        val slice = ProvidersPresenter.slice(access, now)
+        val (home, work) = slice.groups[0].accounts
+        assertTrue(work.omp_access)
+        assertTrue(work.offers_omp_access)
+        assertFalse(home.omp_access, "off by default")
+        assertTrue(home.offers_omp_access)
+        val team = slice.groups[1].accounts.single()
+        assertFalse(team.omp_access)
+        assertFalse(team.offers_omp_access, "ChatGPT logins need no access")
+        assertEquals("Allow Oh My Pi to use this login", OmpAccounts.ACCESS_LABEL)
+        assertTrue("Anthropic may block or suspend accounts" in OmpAccounts.ACCESS_MESSAGE)
+        assertTrue("presents itself as Claude Code" in OmpAccounts.ACCESS_MESSAGE)
+        assertTrue("short-lived access tokens" in OmpAccounts.ACCESS_MESSAGE)
+    }
+
+    @Test
     fun hostAccountsFollowTheMachine() {
         val host =
             ProviderFixtures.view(

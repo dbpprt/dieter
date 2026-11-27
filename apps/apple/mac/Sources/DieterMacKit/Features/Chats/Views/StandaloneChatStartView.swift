@@ -138,6 +138,8 @@ struct StandaloneChatStartView: View {
     /// Why the chosen provider account cannot run the first message here.
     private var accountBlockedText: String {
         let agent = preview.agent
+        // The agent has no account it may use at all, e.g. Oh My Pi without an allowed Claude login.
+        if !agent.accountHint.isEmpty { return agent.accountHint }
         let chosen =
             agent.accounts.first { $0.id == agent.selection.accountID }
             ?? agent.accounts.first { $0.label == agent.accountLabel }

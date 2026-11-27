@@ -27,6 +27,10 @@ type Environment struct {
 	// accounts' auth homes. Discovery reads the newest cache among them, then
 	// the host's CODEX_HOME.
 	CodexModelHomes func() []string
+	// OMPProviderBaseURLs points Oh My Pi's subscription providers
+	// ("anthropic", "openai-codex") at other endpoints in its managed
+	// models.yml. Tests only: production turns reach the providers.
+	OMPProviderBaseURLs map[string]string
 }
 
 // runtimeArchive is the prebuilt runtime this environment installs, if any.

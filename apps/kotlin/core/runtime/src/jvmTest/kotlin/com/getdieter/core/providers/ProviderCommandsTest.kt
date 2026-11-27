@@ -8,6 +8,7 @@ import com.getdieter.client.v1.ProviderAccountRef
 import com.getdieter.client.v1.ProviderCreate
 import com.getdieter.client.v1.ProviderInclusion
 import com.getdieter.client.v1.ProviderMachineRef
+import com.getdieter.client.v1.ProviderOmpAccess
 import com.getdieter.client.v1.ProviderRename
 import com.getdieter.client.v1.ProviderSignInStart
 import com.getdieter.client.v1.ProvidersCommand
@@ -173,6 +174,27 @@ class ProviderCommandsTest {
         commands.execute(ProvidersCommand(set_included = ProviderInclusion(CLAUDE_WORK, false)))
         assertEquals(false, macDaemon.updates.last().include_in_summary)
         assertNull(macDaemon.updates.last().label)
+    }
+
+    @Test
+    fun ohMyPiAccessIsAClaudeAccountsSwitch() = runTest {
+        val commands = commands()
+        commands.execute(ProvidersCommand(set_omp_access = ProviderOmpAccess(CLAUDE_WORK, true)))
+        val update = macDaemon.updates.single()
+        assertEquals(CLAUDE_WORK, update.account_id)
+        assertEquals(true, update.omp_access)
+        assertNull(update.label)
+        assertNull(update.include_in_summary)
+        commands.execute(ProvidersCommand(set_omp_access = ProviderOmpAccess(CLAUDE_WORK, false)))
+        assertEquals(false, macDaemon.updates.last().omp_access)
+        val chatgpt =
+            assertFailsWith<CoreException> {
+                commands.execute(
+                    ProvidersCommand(set_omp_access = ProviderOmpAccess(CHATGPT_TEAM, true))
+                )
+            }
+        assertEquals(FailureKind.PERMANENT, chatgpt.kind)
+        assertEquals(2, macDaemon.updates.size, "ChatGPT logins never ask for it")
     }
 
     @Test

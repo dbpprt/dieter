@@ -26,6 +26,10 @@ data class AccountChoice(
     val detail: String = "",
     val readiness: AccountReadiness = AccountReadiness(Readiness.READY),
     val isDefault: Boolean = false,
+    /** claude-code, codex, siwc, host or environment. */
+    val method: String = "",
+    /** Claude only: Oh My Pi may use this login. */
+    val ompAccess: Boolean = false,
 ) {
     val ready: Boolean
         get() = readiness.ready
@@ -104,6 +108,8 @@ object AgentAccountRules {
                                 detail = detail(account.identity.email, account.plan),
                                 readiness = ProviderReadiness.of(view, account.id, target),
                                 isDefault = account.isDefault,
+                                method = account.method,
+                                ompAccess = account.record.ompAccess,
                             )
                         }
                     },
@@ -153,6 +159,8 @@ object AgentAccountRules {
                                 ),
                             readiness = readiness,
                             isDefault = row.is_default,
+                            method = row.method,
+                            ompAccess = row.omp_access,
                         )
                     }
             }
@@ -178,12 +186,14 @@ object AgentAccountRules {
 
     /**
      * The conversation banner when the account a send would use cannot run on the conversation's
-     * machine: sign in there, sign in again after an expiry, or choose another account.
+     * machine: sign in there, sign in again after an expiry, or choose another account. With
+     * [unavailable], the agent has no account it may use at all, and the banner says why.
      */
     fun notice(
         account: AccountChoice?,
         missingId: String?,
         accounts: AgentAccounts,
+        unavailable: String? = null,
     ): ProviderNotice? {
         if (missingId != null)
             return ProviderNotice(
@@ -191,6 +201,13 @@ object AgentAccountRules {
                 daemon_id = accounts.daemonId,
                 machine = accounts.machine,
                 title = "The chosen account is no longer available",
+                action = ACTION_CHOOSE_ACCOUNT,
+            )
+        if (unavailable != null)
+            return ProviderNotice(
+                daemon_id = accounts.daemonId,
+                machine = accounts.machine.ifEmpty { accounts.daemonId.take(8) },
+                title = unavailable,
                 action = ACTION_CHOOSE_ACCOUNT,
             )
         account ?: return null

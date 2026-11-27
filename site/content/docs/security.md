@@ -151,7 +151,12 @@ not. Each machine signs in to an account on its own and keeps that login:
 Claude Code keeps it in its own store (a macOS Keychain item, or a file on
 Linux) for the account's directory under `DIETER_HOME`, and Codex and Sign in
 with ChatGPT tokens stay in user-only files there. Dieter never reads Claude
-logins. Accounts, each machine's sign-in state and usage replicate between your
+logins, with one exception you turn on per account:
+[Oh My Pi access](/docs/providers/#oh-my-pi-access). Then the machine reads
+the login's access token, never its refresh token, and hands it only to Oh My
+Pi conversations on that account on the same machine; Claude Code keeps
+renewing the login, and the token is never stored or copied. Accounts, each
+machine's sign-in state and usage replicate between your
 machines inside the end-to-end encrypted connections and never reach the
 gateway. Apps see sign-in pages, device codes and the codes you paste, never a
 token.
@@ -162,7 +167,9 @@ never leaves the sign-in process on that machine, and Dieter never logs it.
 Agents can list accounts and choose one for the work they create, but cannot
 add or remove accounts or sign a machine in or out. They still run as your
 user, so an agent that reads `DIETER_HOME` could read a machine's Codex tokens,
-just as it could read `~/.codex`.
+just as it could read `~/.codex`. An agent in an Oh My Pi conversation can also
+fetch the access tokens of that conversation's own accounts, which last hours
+for Claude and days for ChatGPT, but never a refresh token.
 
 ## Vault
 

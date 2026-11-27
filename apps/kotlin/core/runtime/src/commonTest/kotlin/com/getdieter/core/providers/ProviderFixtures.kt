@@ -25,12 +25,14 @@ object ProviderFixtures {
         method: String = ProviderKinds.defaultMethod(provider),
         email: String = "",
         included: Boolean = true,
+        omp: Boolean = false,
     ) =
         entry(
             ProviderRecords.ACCOUNTS,
             id,
             """{"provider":"$provider","label":"$label","method":"$method",""" +
                 """"identity":{"email":"$email"},"includeInSummary":$included,""" +
+                (if (omp) """"ompAccess":true,""" else "") +
                 """"createdAt":"2026-11-14T10:00:00Z","createdBy":"d1"}""",
         )
 

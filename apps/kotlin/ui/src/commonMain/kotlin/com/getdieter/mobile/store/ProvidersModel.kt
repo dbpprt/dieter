@@ -73,6 +73,10 @@ class ProvidersModel internal constructor(private val context: StoreContext) {
     fun setIncluded(accountId: String, included: Boolean) =
         command(ProvidersCommand(set_included = ProviderInclusion(accountId, included)))
 
+    /** Lets Oh My Pi use a Claude login, after the core's confirmation; or stops it. */
+    fun setOmpAccess(accountId: String, allowed: Boolean) =
+        command(ProvidersCommand(set_omp_access = ProviderOmpAccess(accountId, allowed)))
+
     /**
      * Signs [accountId] in on [daemonId]; [started] gets the session the sign-in sheet follows in
      * [ProvidersSlice.sessions], [failed] the reason it did not start.

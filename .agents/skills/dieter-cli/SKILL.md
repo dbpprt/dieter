@@ -126,22 +126,27 @@ response before the local credential is saved can be retried; do not guess
 whether the server committed or edit `identity.json` or gateway SQLite.
 Different keys or accounts require a separate audited recovery process.
 
-`dieter harness list` returns the selected machine's catalog. OMP discovery runs
-the OMP build in Dieter's harness runtime, the same as new turns, not a separately
-installed global `omp`, and exposes only GPT-6 Luna, Sol, and Astra. The
-first OMP catalog refresh can install that runtime and Dieter's pinned Bun;
-later refreshes reuse them. New turns pass the selected model at OMP launch rather
-than relying on OMP's narrower ACP cycling-model option.
+`dieter harness list` returns the selected machine's catalog. Oh My Pi (`omp`)
+has a fixed list of managed models and no discovery: `anthropic/claude-opus-5-5`,
+`anthropic/claude-sonnet-5-5` (default), `anthropic/claude-haiku-5-5` and
+`anthropic/claude-fable-5-2` run on Claude accounts; `openai-codex/gpt-6-sol`,
+`openai-codex/gpt-6-astra` and `openai-codex/gpt-6-luna` on ChatGPT accounts.
+Dieter's OMP turns use `DIETER_HOME/omp/agent` and ignore `~/.omp`,
+`OMP_PROFILE`, `omp login` logins and OMP's own `config.yml`/`models.yml`; an
+OMP conversation from before that continues in a new OMP session without the
+earlier context. The first OMP turn installs Dieter's pinned Bun.
 Claude Code, Codex and OMP run at the versions in the runtime's
 `package-lock.json`; their bridges link them from the runtime and never run npm,
 so a release daemon host needs no npm (`dieter doctor` reports it as optional).
 Only DSH still installs from npm on first use.
 
-Claude Code and Codex turns run on provider accounts: Claude and ChatGPT
-logins that every machine of the account lists, each signed in separately on
-each machine. Accounts, every machine's login state and plan usage replicate
-between daemons as KV records; the logins never leave the machine that signed
-in, and Dieter never reads Claude credentials. Read them with:
+Claude Code, Codex and Oh My Pi turns run on provider accounts: Claude and
+ChatGPT logins that every machine of the account lists, each signed in
+separately on each machine. Accounts, every machine's login state and plan
+usage replicate between daemons as KV records; the logins never leave the
+machine that signed in. Dieter reads a Claude login's access token only for Oh
+My Pi turns on accounts with Oh My Pi access, and never its refresh token.
+Read them with:
 
 ```sh
 dieter provider list                         # accounts, each machine's state, usage
@@ -165,7 +170,8 @@ Choose the account for new work or the next message with `--account ID|LABEL`
 on `card create`, `card send`, `chat create`, `chat send` and
 `schedule create|update`.
 It must belong to the conversation's provider (`claude-code` takes Claude
-accounts, `codex` ChatGPT accounts) and may change between turns. Without it,
+accounts, `codex` ChatGPT accounts, `omp` the accounts of its model's
+provider) and may change between turns. Without it,
 Dieter uses the conversation's last account, then the provider's default, then
 the only account signed in on the owner machine. A card an agent creates should
 normally keep the account of its own conversation; pass `--account` only when
@@ -183,13 +189,24 @@ provider exists ("Add a Claude account in Settings › Providers"). Report that
 to the user; do not retry with another account unless asked.
 
 Agents cannot manage accounts. Adding, renaming, including or excluding,
-removing, setting defaults, signing in (`provider login`) or out, and spending
+removing, setting defaults, turning Oh My Pi access on or off
+(`provider omp-access`), signing in (`provider login`) or out, and spending
 reset credits fail with PermissionDenied while `DIETER_TURN_TOKEN` is set, also
 with `--machine`; leave `provider check` and `usage --refresh` to people too.
 Never ask the user for a provider password, token or sign-in code, and never
-read or copy files under `DIETER_HOME/provider-accounts`, `~/.claude` or
-`~/.codex`. `dieter provider token` exists only for Codex itself inside Sign in
-with ChatGPT turns; never call it or print its output.
+read or copy files under `DIETER_HOME/provider-accounts`, `DIETER_HOME/omp`,
+`~/.claude` or `~/.codex`. `dieter provider token --turn [--provider
+claude|chatgpt]` exists only for the harnesses themselves: Codex in Sign in
+with ChatGPT turns, and Oh My Pi, whose managed `models.yml` runs it for each
+provider's access token. It works only inside a turn, on the local route.
+Never call it, print its output or pass the token anywhere.
+
+Oh My Pi access lets OMP turns use a Claude login although Anthropic does not
+permit Claude.ai logins in third-party tools; Anthropic may block or suspend
+the account. It is a person's decision per account, off by default. Never turn
+it on or suggest working around it. When admission fails with "Allow Oh My Pi
+to use ACCOUNT in Settings › Providers first", report that to the user; switch
+to a GPT model (a ChatGPT account) only if the user asked for that.
 
 People run the rest:
 
@@ -201,6 +218,7 @@ dieter [--machine M] provider check ACCOUNT
 dieter provider rename ACCOUNT LABEL
 dieter provider include|exclude ACCOUNT
 dieter provider default ACCOUNT
+dieter provider omp-access ACCOUNT on|off      # Claude only; Anthropic policy risk
 dieter provider usage [ACCOUNT] --refresh
 dieter [--machine M] provider reset ACCOUNT --confirm RESET
 dieter provider remove ACCOUNT --confirm REMOVE
@@ -392,6 +410,25 @@ Astra can select Fast mode with `--provider-option fast_mode=true`; schedules
 accept the same option and apply it to every task they create. GPT-5.3 Codex
 and Spark do not support this option.
 
+Oh My Pi's advisor is a second model that reviews the work at the end of the
+agent's run and gives it notes. Its options are all mutable:
+`advisor_model` (`off`, the default, or one of the seven OMP models),
+`advisor_effort` (`low`, `medium` (default), `high`, `xhigh`, `max`) and
+`advisor_account` (an account ID, used only when the advisor's provider differs
+from the implementation model's; otherwise the advisor shares the
+conversation's account). Without `advisor_account`, an advisor on the other
+provider uses that provider's default account. The advisor spends its own
+account's plan usage, so add one only when the user asks. `--provider-option`
+on `send` replaces all options, so repeat every advisor option to keep:
+
+```sh
+dieter card create --project <project-id> --board <board-id> --workspace worktree \
+  --provider omp --model anthropic/claude-sonnet-5-5 --effort high \
+  --provider-option advisor_model=openai-codex/gpt-6-sol \
+  --provider-option advisor_effort=medium --lane todo --prompt-file task.md --format id
+dieter card send --provider-option advisor_model=off --message "Continue." <card-id>
+```
+
 The `strix` provider runs a security scan against the card's worktree and listed
 targets. Agent turns may create a running Strix card (`--lane running`,
 `--workspace worktree`), start a draft, move it to Running or send follow-ups.
@@ -428,9 +465,11 @@ cancellation request fail.
 For an existing card or chat, `send --model MODEL --effort EFFORT` changes the
 next message's selection within the same provider when its harness advertises
 `model-selection` / `effort-selection` with level `between-turns`. Codex,
-Claude Code and Pi support both; OMP and DSH support model changes. OMP's
-thinking level stays fixed after the first message. Mutable options such as
-Codex `--provider-option fast_mode=true` apply to the next message too.
+Claude Code, Pi and OMP support both; DSH supports model changes. An OMP model
+of the other provider (Claude to GPT or back) also switches the account:
+without `--account`, that provider's default. Mutable options such as Codex
+`--provider-option fast_mode=true` or OMP's advisor options apply to the next
+message too.
 `--effort default` explicitly resets reasoning; omitting effort retains the
 current value for the same model and uses the configured default after a model
 change. Queued messages retain separate durable selections, and removing one

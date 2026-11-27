@@ -169,24 +169,68 @@ harnesses:
     capabilities:
       - id: model-selection
         level: between-turns
+      - id: effort-selection
+        level: between-turns
+      - id: account-selection
+        level: between-turns
       - id: subagents
         level: progress
       - id: task-plan
         level: phases
     options:
-      - id: advisor
+      # The advisor is a second model that reviews the implementation
+      # model's work (OMP's advisor role). It runs on the advisor account,
+      # or on the implementation account when both models share a provider:
+      # OMP holds one credential per provider.
+      - id: advisor_model
         name: Advisor
-        description: Ask OMP's advisor for an independent review during the turn.
-        type: boolean
-        default: "false"
-    defaultModel: openai-codex/gpt-6-sol
+        description: A second model that reviews the work and adds notes. It uses that model's plan usage.
+        type: enum
+        default: "off"
+        mutable: true
+        choices:
+          - value: "off"
+            name: "Off"
+          - value: anthropic/claude-opus-5-5
+            name: Claude Opus 5.5
+          - value: anthropic/claude-sonnet-5-5
+            name: Claude Sonnet 5.5
+          - value: anthropic/claude-haiku-5-5
+            name: Claude Haiku 5.5
+          - value: anthropic/claude-fable-5-2
+            name: Claude Fable 5.2
+          - value: openai-codex/gpt-6-sol
+            name: GPT-6 Sol
+          - value: openai-codex/gpt-6-astra
+            name: GPT-6 Astra
+          - value: openai-codex/gpt-6-luna
+            name: GPT-6 Luna
+      - id: advisor_effort
+        name: Advisor thinking
+        description: How much the advisor thinks before it reviews.
+        type: enum
+        default: medium
+        mutable: true
+        choices:
+          - value: low
+            name: Low
+          - value: medium
+            name: Medium
+          - value: high
+            name: High
+          - value: xhigh
+            name: Extra high
+          - value: max
+            name: Max
+      - id: advisor_account
+        name: Advisor account
+        description: The provider account the advisor runs on when it uses the other provider. Empty uses that provider's default.
+        type: string
+        mutable: true
+    defaultModel: anthropic/claude-sonnet-5-5
     effort:
       label: Thinking
       options:
-        - id: "off"
-          name: "Off"
-        - id: minimal
-          name: Minimal
         - id: low
           name: Low
         - id: medium
@@ -197,25 +241,44 @@ harnesses:
           name: Extra high
         - id: max
           name: Max
-        - id: auto
-          name: Auto
     models:
-      # Keep OMP's UI intentionally small. OMP still owns credentials and
-      # provider routing for these exact selectors on each daemon host.
-      - id: openai-codex/gpt-6-luna
-        name: GPT-6 Luna · Codex
-        contextWindow: 272000
+      # Managed models only (ADR 0007): Claude models run on Claude
+      # accounts with Oh My Pi access, ChatGPT models on ChatGPT logins.
+      # The provider prefix selects the account kind.
+      - id: anthropic/claude-opus-5-5
+        name: Claude Opus 5.5
+        contextWindow: 1000000
+        defaultEffort: high
+        efforts: [low, medium, high, xhigh, max]
+      - id: anthropic/claude-sonnet-5-5
+        name: Claude Sonnet 5.5
+        contextWindow: 1000000
+        defaultEffort: high
+        efforts: [low, medium, high, xhigh, max]
+      - id: anthropic/claude-haiku-5-5
+        name: Claude Haiku 5.5
+        contextWindow: 1000000
+        defaultEffort: medium
+        efforts: [low, medium, high, xhigh, max]
+      - id: anthropic/claude-fable-5-2
+        name: Claude Fable 5.2
+        contextWindow: 1000000
         defaultEffort: high
         efforts: [low, medium, high, xhigh, max]
       - id: openai-codex/gpt-6-sol
-        name: GPT-6 Sol · Codex
+        name: GPT-6 Sol
         contextWindow: 272000
         defaultEffort: high
         efforts: [low, medium, high, xhigh, max]
       - id: openai-codex/gpt-6-astra
-        name: GPT-6 Astra · Codex
+        name: GPT-6 Astra
         contextWindow: 272000
         defaultEffort: high
+        efforts: [low, medium, high, xhigh, max]
+      - id: openai-codex/gpt-6-luna
+        name: GPT-6 Luna
+        contextWindow: 272000
+        defaultEffort: medium
         efforts: [low, medium, high, xhigh, max]
 
   - id: dsh

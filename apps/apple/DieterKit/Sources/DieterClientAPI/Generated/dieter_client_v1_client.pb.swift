@@ -4040,7 +4040,8 @@ public nonisolated struct ClientAgentControlsState: @unchecked Sendable {
   }
 
   /// The selected agent's provider accounts, for the account picker; empty
-  /// for agents without accounts (Pi, Oh My Pi, DSH).
+  /// for agents without accounts (Pi, DSH). Oh My Pi lists the accounts of
+  /// its model's provider that it may use.
   public var accounts: [ClientAgentAccountOption] {
     get {_storage._accounts}
     set {_uniqueStorage()._accounts = newValue}
@@ -4062,6 +4063,14 @@ public nonisolated struct ClientAgentControlsState: @unchecked Sendable {
   public var accountBlocked: Bool {
     get {_storage._accountBlocked}
     set {_uniqueStorage()._accountBlocked = newValue}
+  }
+
+  /// Shown in place of the account picker when the agent has no account it
+  /// may use, e.g. "Allow Oh My Pi to use a Claude login in Settings ›
+  /// Providers."; empty otherwise.
+  public var accountHint: String {
+    get {_storage._accountHint}
+    set {_uniqueStorage()._accountHint = newValue}
   }
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
@@ -12380,6 +12389,15 @@ public nonisolated struct ClientProvidersCommand: Sendable {
     set {action = .dismiss(newValue)}
   }
 
+  /// Claude accounts only (ProviderAccountRow.offers_omp_access).
+  public var setOmpAccess: ClientProviderOmpAccess {
+    get {
+      if case .setOmpAccess(let v)? = action {return v}
+      return ClientProviderOmpAccess()
+    }
+    set {action = .setOmpAccess(newValue)}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Action: Equatable, Sendable {
@@ -12403,6 +12421,8 @@ public nonisolated struct ClientProvidersCommand: Sendable {
     case consumeReset(ClientProviderAccountRef)
     /// Drops a finished session from the slice.
     case dismiss(ClientProviderSessionRef)
+    /// Claude accounts only (ProviderAccountRow.offers_omp_access).
+    case setOmpAccess(ClientProviderOmpAccess)
 
   }
 
@@ -12461,6 +12481,22 @@ public nonisolated struct ClientProviderInclusion: Sendable {
   public var accountID: String = String()
 
   public var included: Bool = false
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+/// Whether Oh My Pi turns may use a Claude login. Clients confirm before
+/// allowing it, in the core's words (SharedRules.providerOmpAccessMessage).
+public nonisolated struct ClientProviderOmpAccess: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var accountID: String = String()
+
+  public var allowed: Bool = false
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -12794,6 +12830,18 @@ public nonisolated struct ClientProviderAccountRow: @unchecked Sendable {
   public var managed: Bool {
     get {_storage._managed}
     set {_uniqueStorage()._managed = newValue}
+  }
+
+  /// Oh My Pi turns may use this Claude login.
+  public var ompAccess: Bool {
+    get {_storage._ompAccess}
+    set {_uniqueStorage()._ompAccess = newValue}
+  }
+
+  /// A Claude account: the row offers the Oh My Pi access switch.
+  public var offersOmpAccess: Bool {
+    get {_storage._offersOmpAccess}
+    set {_uniqueStorage()._offersOmpAccess = newValue}
   }
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
@@ -22033,7 +22081,7 @@ nonisolated extension ClientAgentPickerItem: SwiftProtobuf.Message, SwiftProtobu
 
 nonisolated extension ClientAgentControlsState: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".AgentControlsState"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}selection\0\u{1}providers\0\u{1}models\0\u{3}provider_enabled\0\u{3}model_enabled\0\u{3}effort_enabled\0\u{3}provider_label\0\u{3}model_label\0\u{3}effort_label\0\u{1}efforts\0\u{1}options\0\u{3}option_values\0\u{3}option_enabled\0\u{3}effort_choices\0\u{3}effort_value\0\u{3}fast_mode\0\u{3}option_kinds\0\u{3}option_on\0\u{3}fast_option_id\0\u{1}accounts\0\u{3}account_enabled\0\u{3}account_label\0\u{3}account_blocked\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}selection\0\u{1}providers\0\u{1}models\0\u{3}provider_enabled\0\u{3}model_enabled\0\u{3}effort_enabled\0\u{3}provider_label\0\u{3}model_label\0\u{3}effort_label\0\u{1}efforts\0\u{1}options\0\u{3}option_values\0\u{3}option_enabled\0\u{3}effort_choices\0\u{3}effort_value\0\u{3}fast_mode\0\u{3}option_kinds\0\u{3}option_on\0\u{3}fast_option_id\0\u{1}accounts\0\u{3}account_enabled\0\u{3}account_label\0\u{3}account_blocked\0\u{3}account_hint\0")
 
   fileprivate class _StorageClass {
     var _selection: DieterAPI.Dieter_V1_HarnessSelection? = nil
@@ -22059,6 +22107,7 @@ nonisolated extension ClientAgentControlsState: SwiftProtobuf.Message, SwiftProt
     var _accountEnabled: Bool = false
     var _accountLabel: String = String()
     var _accountBlocked: Bool = false
+    var _accountHint: String = String()
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -22092,6 +22141,7 @@ nonisolated extension ClientAgentControlsState: SwiftProtobuf.Message, SwiftProt
       _accountEnabled = source._accountEnabled
       _accountLabel = source._accountLabel
       _accountBlocked = source._accountBlocked
+      _accountHint = source._accountHint
     }
   }
 
@@ -22133,6 +22183,7 @@ nonisolated extension ClientAgentControlsState: SwiftProtobuf.Message, SwiftProt
         case 21: try { try decoder.decodeSingularBoolField(value: &_storage._accountEnabled) }()
         case 22: try { try decoder.decodeSingularStringField(value: &_storage._accountLabel) }()
         case 23: try { try decoder.decodeSingularBoolField(value: &_storage._accountBlocked) }()
+        case 24: try { try decoder.decodeSingularStringField(value: &_storage._accountHint) }()
         default: break
         }
       }
@@ -22214,6 +22265,9 @@ nonisolated extension ClientAgentControlsState: SwiftProtobuf.Message, SwiftProt
       if _storage._accountBlocked != false {
         try visitor.visitSingularBoolField(value: _storage._accountBlocked, fieldNumber: 23)
       }
+      if !_storage._accountHint.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._accountHint, fieldNumber: 24)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -22246,6 +22300,7 @@ nonisolated extension ClientAgentControlsState: SwiftProtobuf.Message, SwiftProt
         if _storage._accountEnabled != rhs_storage._accountEnabled {return false}
         if _storage._accountLabel != rhs_storage._accountLabel {return false}
         if _storage._accountBlocked != rhs_storage._accountBlocked {return false}
+        if _storage._accountHint != rhs_storage._accountHint {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -36148,7 +36203,7 @@ nonisolated extension ClientMachineOperationCopy: SwiftProtobuf.Message, SwiftPr
 
 nonisolated extension ClientProvidersCommand: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ProvidersCommand"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}create\0\u{1}rename\0\u{1}remove\0\u{3}set_default\0\u{3}set_included\0\u{3}sign_in\0\u{3}sign_in_all\0\u{1}submit\0\u{1}cancel\0\u{3}sign_out\0\u{1}check\0\u{3}refresh_usage\0\u{3}consume_reset\0\u{1}dismiss\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}create\0\u{1}rename\0\u{1}remove\0\u{3}set_default\0\u{3}set_included\0\u{3}sign_in\0\u{3}sign_in_all\0\u{1}submit\0\u{1}cancel\0\u{3}sign_out\0\u{1}check\0\u{3}refresh_usage\0\u{3}consume_reset\0\u{1}dismiss\0\u{3}set_omp_access\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -36338,6 +36393,19 @@ nonisolated extension ClientProvidersCommand: SwiftProtobuf.Message, SwiftProtob
           self.action = .dismiss(v)
         }
       }()
+      case 15: try {
+        var v: ClientProviderOmpAccess?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .setOmpAccess(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .setOmpAccess(v)
+        }
+      }()
       default: break
       }
     }
@@ -36404,6 +36472,10 @@ nonisolated extension ClientProvidersCommand: SwiftProtobuf.Message, SwiftProtob
     case .dismiss?: try {
       guard case .dismiss(let v)? = self.action else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 14)
+    }()
+    case .setOmpAccess?: try {
+      guard case .setOmpAccess(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 15)
     }()
     case nil: break
     }
@@ -36552,6 +36624,41 @@ nonisolated extension ClientProviderInclusion: SwiftProtobuf.Message, SwiftProto
   public static func ==(lhs: ClientProviderInclusion, rhs: ClientProviderInclusion) -> Bool {
     if lhs.accountID != rhs.accountID {return false}
     if lhs.included != rhs.included {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientProviderOmpAccess: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ProviderOmpAccess"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}account_id\0\u{1}allowed\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.accountID) }()
+      case 2: try { try decoder.decodeSingularBoolField(value: &self.allowed) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.accountID.isEmpty {
+      try visitor.visitSingularStringField(value: self.accountID, fieldNumber: 1)
+    }
+    if self.allowed != false {
+      try visitor.visitSingularBoolField(value: self.allowed, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientProviderOmpAccess, rhs: ClientProviderOmpAccess) -> Bool {
+    if lhs.accountID != rhs.accountID {return false}
+    if lhs.allowed != rhs.allowed {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -36995,7 +37102,7 @@ nonisolated extension ClientProviderGroupRow: SwiftProtobuf.Message, SwiftProtob
 
 nonisolated extension ClientProviderAccountRow: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ProviderAccountRow"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}label\0\u{1}identity\0\u{1}subtitle\0\u{1}method\0\u{3}is_default\0\u{1}included\0\u{1}remaining\0\u{1}severity\0\u{3}summary_line\0\u{1}windows\0\u{3}usage_observed_at\0\u{3}dieter_tokens\0\u{1}machines\0\u{3}can_reset\0\u{3}reset_label\0\u{3}manage_usage_url\0\u{3}can_sign_in_all\0\u{1}status\0\u{1}managed\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}label\0\u{1}identity\0\u{1}subtitle\0\u{1}method\0\u{3}is_default\0\u{1}included\0\u{1}remaining\0\u{1}severity\0\u{3}summary_line\0\u{1}windows\0\u{3}usage_observed_at\0\u{3}dieter_tokens\0\u{1}machines\0\u{3}can_reset\0\u{3}reset_label\0\u{3}manage_usage_url\0\u{3}can_sign_in_all\0\u{1}status\0\u{1}managed\0\u{3}omp_access\0\u{3}offers_omp_access\0")
 
   fileprivate class _StorageClass {
     var _id: String = String()
@@ -37018,6 +37125,8 @@ nonisolated extension ClientProviderAccountRow: SwiftProtobuf.Message, SwiftProt
     var _canSignInAll: Bool = false
     var _status: String = String()
     var _managed: Bool = false
+    var _ompAccess: Bool = false
+    var _offersOmpAccess: Bool = false
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -37048,6 +37157,8 @@ nonisolated extension ClientProviderAccountRow: SwiftProtobuf.Message, SwiftProt
       _canSignInAll = source._canSignInAll
       _status = source._status
       _managed = source._managed
+      _ompAccess = source._ompAccess
+      _offersOmpAccess = source._offersOmpAccess
     }
   }
 
@@ -37086,6 +37197,8 @@ nonisolated extension ClientProviderAccountRow: SwiftProtobuf.Message, SwiftProt
         case 18: try { try decoder.decodeSingularBoolField(value: &_storage._canSignInAll) }()
         case 19: try { try decoder.decodeSingularStringField(value: &_storage._status) }()
         case 20: try { try decoder.decodeSingularBoolField(value: &_storage._managed) }()
+        case 21: try { try decoder.decodeSingularBoolField(value: &_storage._ompAccess) }()
+        case 22: try { try decoder.decodeSingularBoolField(value: &_storage._offersOmpAccess) }()
         default: break
         }
       }
@@ -37154,6 +37267,12 @@ nonisolated extension ClientProviderAccountRow: SwiftProtobuf.Message, SwiftProt
       if _storage._managed != false {
         try visitor.visitSingularBoolField(value: _storage._managed, fieldNumber: 20)
       }
+      if _storage._ompAccess != false {
+        try visitor.visitSingularBoolField(value: _storage._ompAccess, fieldNumber: 21)
+      }
+      if _storage._offersOmpAccess != false {
+        try visitor.visitSingularBoolField(value: _storage._offersOmpAccess, fieldNumber: 22)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -37183,6 +37302,8 @@ nonisolated extension ClientProviderAccountRow: SwiftProtobuf.Message, SwiftProt
         if _storage._canSignInAll != rhs_storage._canSignInAll {return false}
         if _storage._status != rhs_storage._status {return false}
         if _storage._managed != rhs_storage._managed {return false}
+        if _storage._ompAccess != rhs_storage._ompAccess {return false}
+        if _storage._offersOmpAccess != rhs_storage._offersOmpAccess {return false}
         return true
       }
       if !storagesAreEqual {return false}

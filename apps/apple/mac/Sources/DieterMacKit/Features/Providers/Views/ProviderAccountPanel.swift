@@ -13,6 +13,7 @@ struct ProviderAccountPanel: View {
     @State private var renaming = false
     @State private var confirmingRemoval = false
     @State private var confirmingReset = false
+    @State private var confirmingOmpAccess = false
     /// The last reset's outcome, as the core words it.
     @State private var resetOutcome: String?
 
@@ -61,6 +62,14 @@ struct ProviderAccountPanel: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text(SharedRules.shared.providerResetMessage())
+        }
+        .confirmationDialog(SharedRules.shared.providerOmpAccessTitle(), isPresented: $confirmingOmpAccess) {
+            Button(SharedRules.shared.providerOmpAccessConfirm()) {
+                Task { await providers.setOmpAccess(accountID: account.id, allowed: true) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(SharedRules.shared.providerOmpAccessMessage())
         }
     }
 
@@ -156,6 +165,26 @@ struct ProviderAccountPanel: View {
             .disabled(busy)
             .help("The sidebar and the Inbox show the tightest limit of included accounts.")
             .accessibilityIdentifier("providers.account.\(account.id).include")
+            if account.offersOmpAccess {
+                Toggle(
+                    SharedRules.shared.providerOmpAccessLabel(),
+                    isOn: Binding(
+                        get: { account.ompAccess },
+                        set: { allowed in
+                            if allowed {
+                                confirmingOmpAccess = true
+                            } else {
+                                Task { await providers.setOmpAccess(accountID: account.id, allowed: false) }
+                            }
+                        }
+                    )
+                )
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .disabled(busy)
+                .help(SharedRules.shared.providerOmpAccessDetail())
+                .accessibilityIdentifier("providers.account.\(account.id).omp-access")
+            }
             Spacer(minLength: 8)
             if let resetOutcome {
                 Text(resetOutcome).font(.caption2).foregroundStyle(DieterTheme.subtle)

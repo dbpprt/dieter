@@ -44,8 +44,10 @@ service ProviderAccountService {
   rpc RefreshProviderUsage(RefreshProviderUsageRequest) returns (ProviderAccount);
   // Spends one ChatGPT rate-limit reset credit of an account signed in here.
   rpc ConsumeProviderUsageReset(ConsumeProviderUsageResetRequest) returns (ConsumeProviderUsageResetResponse);
-  // Returns the current access token of the calling turn's own Sign in with
-  // ChatGPT account. Local route only, and only with a live turn token.
+  // Returns the current access token of one of the calling turn's own
+  // accounts: its Sign in with ChatGPT account, or, for Oh My Pi turns, the
+  // account the turn uses for the requested provider. Local route only, and
+  // only with a live turn token.
   rpc GetProviderTurnToken(GetProviderTurnTokenRequest) returns (ProviderTurnToken);
 }
 
@@ -152,6 +154,9 @@ message ProviderAccount {
   ProviderTokenUsage dieter_tokens = 10;
   string created_at = 11;
   string created_by = 12;
+  // Claude only: Oh My Pi turns may use this login. Off by default; Anthropic
+  // does not permit Claude.ai logins in third-party harnesses.
+  bool omp_access = 13;
 }
 
 message ListProviderAccountsRequest {
@@ -175,6 +180,8 @@ message UpdateProviderAccountRequest {
   string account_id = 1;
   optional string label = 2;
   optional bool include_in_summary = 3;
+  // Claude accounts only.
+  optional bool omp_access = 4;
 }
 
 message DeleteProviderAccountRequest {
@@ -287,7 +294,11 @@ message ConsumeProviderUsageResetResponse {
   ProviderAccount account = 2;
 }
 
-message GetProviderTurnTokenRequest {}
+message GetProviderTurnTokenRequest {
+  // Unspecified: the turn's Sign in with ChatGPT account. Claude or ChatGPT:
+  // the account an Oh My Pi turn uses for that provider.
+  ProviderKind provider = 1;
+}
 
 message ProviderTurnToken {
   string token = 1;

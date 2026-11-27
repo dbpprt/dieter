@@ -24,6 +24,7 @@ import com.getdieter.core.composition.WorkspaceMode
 import com.getdieter.core.conversation.ConversationView
 import com.getdieter.core.metadata.MachineMetadata
 import com.getdieter.core.providers.AgentAccountRules
+import com.getdieter.core.providers.OmpAccounts
 import com.getdieter.core.providers.ProvidersView
 import com.getdieter.core.selection.AgentControls
 import com.getdieter.core.selection.ProviderOptionKind
@@ -275,12 +276,12 @@ internal fun creationPreview(plan: CreationPlan): CreationPreview {
  * Agent pickers as the client contract carries them; picker entries are named by the catalog, else
  * by their ID.
  */
-internal fun agentControlsState(controls: AgentControls): AgentControlsState =
-    AgentControlsState(
+internal fun agentControlsState(controls: AgentControls): AgentControlsState {
+    val options = controls.shownOptions
+    val settled = controls.settledSelection
+    return AgentControlsState(
         // The account a send uses is preselected; the choice itself stays as it was.
-        selection =
-            controls.account?.let { controls.selection.copy(account_id = it.id) }
-                ?: controls.selection,
+        selection = controls.account?.let { settled.copy(account_id = it.id) } ?: settled,
         providers = controls.harnesses.map { AgentPickerItem(it.id, it.name.ifEmpty { it.id }) },
         models =
             controls.harness?.models.orEmpty().map {
@@ -294,19 +295,19 @@ internal fun agentControlsState(controls: AgentControls): AgentControlsState =
         effort_label = controls.effortLabel,
         efforts = controls.efforts,
         options =
-            controls.options.map { option ->
+            options.map { option ->
                 option.copy(
                     choices = option.choices.map { it.copy(name = it.name.ifEmpty { it.value_ }) }
                 )
             },
-        option_values = controls.optionValues,
-        option_enabled = controls.options.associate { it.id to controls.optionEnabled(it) },
+        option_values = options.associate { it.id to controls.shownValue(it) },
+        option_enabled = options.associate { it.id to controls.optionEnabled(it) },
         effort_choices = controls.effortChoices,
         effort_value = controls.effortValue,
         fast_mode = controls.fastMode,
         fast_option_id = controls.fastOptionId.orEmpty(),
         option_kinds =
-            controls.options.associate {
+            options.associate {
                 it.id to
                     when (Selections.optionKind(it)) {
                         ProviderOptionKind.TOGGLE -> AgentOptionKind.AGENT_OPTION_KIND_TOGGLE
@@ -315,14 +316,16 @@ internal fun agentControlsState(controls: AgentControls): AgentControlsState =
                     }
             },
         option_on =
-            controls.options
+            options
                 .filter { Selections.optionKind(it) == ProviderOptionKind.TOGGLE }
                 .associate { it.id to Selections.isOn(controls.optionValue(it)) },
         accounts = controls.accountOptions.map(AgentAccountRules::option),
         account_enabled = controls.accountEnabled,
         account_label = controls.accountLabel,
         account_blocked = controls.accountBlocked,
+        account_hint = controls.accountHint.orEmpty(),
     )
+}
 
 /**
  * The composer of [view] as the conversation slice shows it ([AgentControls.forComposer]) for
@@ -361,7 +364,12 @@ internal fun composerAgent(
 
 /** The conversation's banner when the account its next send uses cannot run on its machine. */
 internal fun providerNotice(controls: AgentControls?): ProviderNotice? = controls?.let {
-    AgentAccountRules.notice(it.account, it.missingAccount, it.accounts)
+    AgentAccountRules.notice(
+        it.account,
+        it.missingAccount,
+        it.accounts,
+        unavailable = it.accountHint?.takeIf { _ -> it.accountBlocked },
+    )
 }
 
 /**
@@ -393,6 +401,13 @@ internal fun AgentControls.choosing(choice: AgentChoice): HarnessSelection {
             options.firstOrNull { it.id == setting.id }
                 ?: invalid("That option does not apply to this model.")
         if (!optionEnabled(option)) invalid("This option cannot change in a started conversation.")
+        if (option.id == OmpAccounts.ADVISOR_ACCOUNT && selection.provider == OmpAccounts.HARNESS) {
+            if (!advisorAccountApplies)
+                invalid("The advisor uses the conversation's account while both use one provider.")
+            val id = setting.option_value
+            if (id.isNotEmpty() && advisorAccountOptions.none { it.id == id })
+                invalid("That account is not available for the advisor.")
+        }
         return settingOption(option.id, setting.option_value)
     }
     choice.account?.let { id ->

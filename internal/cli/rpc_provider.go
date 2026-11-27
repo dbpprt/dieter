@@ -29,23 +29,28 @@ const providerHelp = `Usage: dieter provider <action> [options]
 The Claude and ChatGPT accounts agent turns run on. Accounts, each machine's
 sign-in state and plan usage replicate between your machines; credentials
 never leave the machine that signed in. Claude Code and Codex keep their own
-logins, so Dieter never reads Claude credentials.
+logins. Dieter reads a Claude login's access token only for Oh My Pi turns,
+and only on accounts with omp-access on.
 
 Accounts (any machine):
-  list     List accounts, their sign-in state and tightest usage window
-  add      Add a Claude or ChatGPT account; then sign in with login
-  rename   Rename an account
-  include  Count an account in usage summaries
-  exclude  Leave an account out of usage summaries
-  default  Make an account its provider's default for new conversations
-  remove   Remove an account; every machine signs it out and deletes its files
+  list        List accounts, their sign-in state and tightest usage window
+  add         Add a Claude or ChatGPT account; then sign in with login
+  rename      Rename an account
+  include     Count an account in usage summaries
+  exclude     Leave an account out of usage summaries
+  default     Make an account its provider's default for new conversations
+  omp-access  Let Oh My Pi turns use a Claude account (Anthropic policy risk)
+  remove      Remove an account; every machine signs it out and deletes its files
 
 On the target machine (this one, or global --machine ID|NAME):
-  login    Sign an account in with the provider's own sign-in
-  logout   Sign an account out
-  check    Verify an account's sign-in now
-  usage    Show plan usage and Dieter's token use; --refresh reads it now
-  reset    Spend one ChatGPT rate-limit reset credit
+  login       Sign an account in with the provider's own sign-in
+  logout      Sign an account out
+  check       Verify an account's sign-in now
+  usage       Show plan usage and Dieter's token use; --refresh reads it now
+  reset       Spend one ChatGPT rate-limit reset credit
+
+Inside agent turns:
+  token       Print the running turn's own access token (harness helper)
 
 ACCOUNT is an account ID (pa_...) or a unique case-insensitive label. Pass
 --account ID|LABEL to card, chat and schedule commands to pick the account a
@@ -62,7 +67,7 @@ func (c *CLI) rpcProvider(args []string) error {
 		"list": c.providerList, "ls": c.providerList, "add": c.providerAdd, "rename": c.providerRename,
 		"include": func(args []string) error { return c.providerInclusion(args, true) },
 		"exclude": func(args []string) error { return c.providerInclusion(args, false) },
-		"default": c.providerDefault, "remove": c.providerRemove, "rm": c.providerRemove,
+		"default": c.providerDefault, "omp-access": c.providerOMPAccess, "remove": c.providerRemove, "rm": c.providerRemove,
 		"login": c.providerLogin, "logout": c.providerLogout, "check": c.providerCheck,
 		"usage": c.providerUsage, "reset": c.providerReset, "token": c.providerToken,
 	}
@@ -293,16 +298,28 @@ func providerMachinesSummary(logins []*dieterv1.ProviderMachineLogin) string {
 	return fmt.Sprintf("%d/%d signed in", signedIn, len(logins))
 }
 
+// providerOMPAccessText is a Claude account's Oh My Pi opt-in; ChatGPT
+// accounts need none.
+func providerOMPAccessText(account *dieterv1.ProviderAccount) string {
+	switch {
+	case account.GetProvider() != dieterv1.ProviderKind_PROVIDER_KIND_CLAUDE:
+		return "-"
+	case account.GetOmpAccess():
+		return "on"
+	}
+	return "off"
+}
+
 func providerAccountsTable(out io.Writer, accounts []*dieterv1.ProviderAccount) error {
 	writer := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(writer, "ID\tPROVIDER\tLABEL\tMETHOD\tDEFAULT\tIDENTITY\tUSAGE\tMACHINES")
+	fmt.Fprintln(writer, "ID\tPROVIDER\tLABEL\tMETHOD\tDEFAULT\tOMP\tIDENTITY\tUSAGE\tMACHINES")
 	for _, account := range accounts {
 		isDefault := ""
 		if account.GetIsDefault() {
 			isDefault = "yes"
 		}
-		fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", account.GetId(), providerKindName(account.GetProvider()), account.GetLabel(),
-			providerMethodName(account.GetMethod()), isDefault, orDash(providerIdentityText(account.GetIdentity())),
+		fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", account.GetId(), providerKindName(account.GetProvider()), account.GetLabel(),
+			providerMethodName(account.GetMethod()), isDefault, providerOMPAccessText(account), orDash(providerIdentityText(account.GetIdentity())),
 			providerUsageSummary(account.GetUsage()), providerMachinesSummary(account.GetLogins()))
 	}
 	return writer.Flush()
@@ -330,9 +347,11 @@ func checkFormat(value string, allowed ...string) error {
 func (c *CLI) providerList(args []string) error {
 	const usage = `Usage: dieter provider list [--provider claude|chatgpt] [--format table|json|jsonl|ids]
 
-List provider accounts. IDENTITY is the provider login the account is bound
-to by its first sign-in, USAGE the tightest plan window's remaining share and
-MACHINES how many machines reporting the account are signed in to it.
+List provider accounts. OMP is whether Oh My Pi turns may use a Claude
+account (dieter provider omp-access; ChatGPT accounts need no opt-in).
+IDENTITY is the provider login the account is bound to by its first sign-in,
+USAGE the tightest plan window's remaining share and MACHINES how many
+machines reporting the account are signed in to it.
 `
 	set := flags("provider list")
 	provider := set.String("provider", "", "claude or chatgpt")
@@ -539,6 +558,51 @@ func (c *CLI) providerDefault(args []string) error {
 	return c.providerAccountChange(set.Arg(0), *format, func(ctx context.Context, client dieterclient.Client, account *dieterv1.ProviderAccount) (*dieterv1.ProviderAccount, string, error) {
 		updated, err := client.SetDefaultProviderAccount(ctx, &dieterv1.SetDefaultProviderAccountRequest{AccountId: account.GetId()})
 		return updated, fmt.Sprintf("%q is now the default %s account.", account.GetLabel(), providerKindTitle(account.GetProvider())), err
+	})
+}
+
+func (c *CLI) providerOMPAccess(args []string) error {
+	const usage = `Usage: dieter provider omp-access ACCOUNT on|off [--format text|json]
+
+Let Oh My Pi turns run on a Claude account (on), or stop them (off). Off by
+default; ChatGPT accounts need no opt-in. The choice replicates to every
+machine and applies from the next token Oh My Pi asks for.
+
+Anthropic does not permit Claude.ai logins in third-party tools such as Oh My
+Pi; Anthropic may block or suspend the account at any time. Dieter hands Oh
+My Pi only short-lived access tokens from the account's Claude Code login:
+Claude Code keeps refreshing that login, and Oh My Pi never sees a refresh
+token.
+`
+	set := flags("provider omp-access")
+	format := set.String("format", "text", "text or json")
+	if help, err := parse(set, args, usage, c.Out); help || err != nil {
+		return err
+	}
+	if set.NArg() != 2 {
+		return errors.New(usage)
+	}
+	var allowed bool
+	switch strings.ToLower(strings.TrimSpace(set.Arg(1))) {
+	case "on":
+		allowed = true
+	case "off":
+	default:
+		return errors.New("use on or off; run `dieter provider omp-access --help`")
+	}
+	if err := c.providerMutation(); err != nil {
+		return err
+	}
+	return c.providerAccountChange(set.Arg(0), *format, func(ctx context.Context, client dieterclient.Client, account *dieterv1.ProviderAccount) (*dieterv1.ProviderAccount, string, error) {
+		if account.GetProvider() != dieterv1.ProviderKind_PROVIDER_KIND_CLAUDE {
+			return nil, "", fmt.Errorf("%q is a %s account; only Claude accounts need Oh My Pi access", account.GetLabel(), providerKindTitle(account.GetProvider()))
+		}
+		updated, err := client.UpdateProviderAccount(ctx, &dieterv1.UpdateProviderAccountRequest{AccountId: account.GetId(), OmpAccess: &allowed})
+		message := fmt.Sprintf("Oh My Pi turns may now use %q. Anthropic does not permit Claude.ai logins in third-party tools; the account may be blocked.", account.GetLabel())
+		if !allowed {
+			message = fmt.Sprintf("Oh My Pi turns no longer use %q.", account.GetLabel())
+		}
+		return updated, message, err
 	})
 }
 
@@ -870,20 +934,32 @@ repeated key never spends a second credit.
 }
 
 func (c *CLI) providerToken(args []string) error {
-	const usage = `Usage: dieter provider token --turn
+	const usage = `Usage: dieter provider token --turn [--provider claude|chatgpt]
 
-Print the current access token of the running agent turn's own Sign in with
-ChatGPT account, and nothing else. Codex runs this as its provider auth
-command inside Dieter turns. It needs the turn's DIETER_TURN_TOKEN and talks
-only to the local daemon.
+Print the current access token of one of the running agent turn's own
+accounts, and nothing else. Without --provider, the turn's Sign in with
+ChatGPT account: Codex runs this as its provider auth command inside Dieter
+turns. With --provider, the account an Oh My Pi turn uses for that provider,
+for its implementation model or its advisor: Oh My Pi runs this from its
+managed models.yml, and the daemon refuses a provider the turn does not use.
+It needs the turn's DIETER_TURN_TOKEN and talks only to the local daemon.
 `
 	set := flags("provider token")
 	turn := set.Bool("turn", false, "the calling agent turn's token")
+	provider := set.String("provider", "", "claude or chatgpt: an Oh My Pi turn's account of that provider")
 	if help, err := parse(set, args, usage, c.Out); help || err != nil {
 		return err
 	}
 	if set.NArg() != 0 || !*turn {
 		return errors.New(usage)
+	}
+	request := &dieterv1.GetProviderTurnTokenRequest{}
+	if *provider != "" {
+		kind, err := providerKind(*provider)
+		if err != nil {
+			return err
+		}
+		request.Provider = kind
 	}
 	if c.env.TurnToken == "" {
 		return errors.New("dieter provider token runs only inside an agent turn (DIETER_TURN_TOKEN)")
@@ -897,7 +973,7 @@ only to the local daemon.
 	if err != nil {
 		return err
 	}
-	token, err := client.GetProviderTurnToken(rpcCtx, &dieterv1.GetProviderTurnTokenRequest{})
+	token, err := client.GetProviderTurnToken(rpcCtx, request)
 	if err != nil {
 		return err
 	}

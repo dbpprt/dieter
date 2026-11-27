@@ -70,6 +70,7 @@ class ProvidersModelTest {
             store.providers.remove("pa_w")
             store.providers.setDefault("pa_w")
             store.providers.setIncluded("pa_w", false)
+            store.providers.setOmpAccess("pa_w", true)
             store.providers.submitCode("signin_1", " FIXTURE-CODE ")
             store.providers.submitCallback("signin_1", "http://localhost:1455/cb?code=x")
             store.providers.cancel("signin_1")
@@ -84,6 +85,7 @@ class ProvidersModelTest {
                     ProvidersCommand(remove = ProviderAccountRef("pa_w")),
                     ProvidersCommand(set_default = ProviderAccountRef("pa_w")),
                     ProvidersCommand(set_included = ProviderInclusion("pa_w", false)),
+                    ProvidersCommand(set_omp_access = ProviderOmpAccess("pa_w", true)),
                     ProvidersCommand(
                         submit = ProviderSignInInput("signin_1", code = "FIXTURE-CODE")
                     ),

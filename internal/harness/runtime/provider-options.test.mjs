@@ -8,8 +8,11 @@ import {
   dshACPArgs,
   dshPackageVersion,
   ompACPArgs,
+  ompConversationConfig,
+  ompPinnedRoles,
   ompRuntimeConfig,
   ompStreamTimeoutSeconds,
+  ompTurnFile,
 } from "./provider-options.mjs";
 test("maps the mutable Codex Fast mode option to an explicit service tier", () => {
   assert.deepEqual(codexConfig({ options: { fast_mode: "true" } }), {
@@ -52,28 +55,54 @@ test("installs the agent channel PreToolUse hook as a trusted Codex session hook
   assert.equal(codexConfig({ channelHookCommand: "  " }).hooks, undefined);
 });
 
-test("adds the OMP advisor flag only when the provider option is enabled", () => {
-  assert.deepEqual(
-    ompACPArgs({ effort: "high", options: { advisor: "true" } }, "/hook.mjs", "/config.yml"),
-    ["acp", "--config", "/config.yml", "--hook", "/hook.mjs", "--thinking=high", "--advisor"],
-  );
-  assert.deepEqual(ompACPArgs({ options: { advisor: "false" } }, "/hook.mjs"), [
-    "acp",
-    "--hook",
-    "/hook.mjs",
-  ]);
+test("launches OMP with arguments that never depend on the turn", () => {
+  const launch = { hookPath: "/hook.mjs", configPath: "/config.yml" };
+  assert.deepEqual(ompACPArgs(launch), ["acp", "--config", "/config.yml", "--hook", "/hook.mjs"]);
 });
-test("launches OMP bridges with the selected model", () => {
-  const request = { model: "openrouter/openai/gpt-6-sol", effort: "max" };
-  assert.deepEqual(ompACPArgs(request, "/hook.mjs", "/config.yml"), [
-    "acp",
-    "--config",
-    "/config.yml",
-    "--hook",
-    "/hook.mjs",
-    "--thinking=max",
-    "--model=openrouter/openai/gpt-6-sol",
-  ]);
+
+test("pins every OMP chat role to the implementation model and configures the advisor", () => {
+  const config = ompConversationConfig({
+    model: "anthropic/claude-opus-5-5",
+    options: { advisor_model: "openai-codex/gpt-6-sol", advisor_effort: "low" },
+  });
+  assert.ok(config.startsWith(ompRuntimeConfig().trimEnd()));
+  for (const role of ompPinnedRoles) {
+    assert.match(config, new RegExp(`\\n  ${role}: "anthropic/claude-opus-5-5"\\n`));
+  }
+  assert.match(config, /\n  advisor: "openai-codex\/gpt-6-sol:low"\n/);
+  assert.match(
+    config,
+    /\nadvisor:\n  enabled: true\n  reviewMode: agent-end\n  syncBacklog: strict\n$/,
+  );
+});
+
+test("turns the OMP advisor off without an advisor model", () => {
+  for (const options of [{}, { advisor_model: "off" }, { advisor_model: "" }]) {
+    const config = ompConversationConfig({ model: "openai-codex/gpt-6-sol", options });
+    assert.doesNotMatch(config, /  advisor: /);
+    assert.match(config, /\nadvisor:\n  enabled: false\n$/);
+  }
+});
+
+test("rejects OMP models Dieter does not manage", () => {
+  assert.throws(
+    () => ompConversationConfig({ model: "openrouter/openai/gpt-6-sol" }),
+    /Claude or ChatGPT/,
+  );
+  assert.throws(
+    () =>
+      ompConversationConfig({
+        model: "anthropic/claude-opus-5-5",
+        options: { advisor_model: "tailscale/glm" },
+      }),
+    /advisor must be a Claude or ChatGPT model/,
+  );
+});
+
+test("hands the turn's thinking level to the OMP hook", () => {
+  assert.deepEqual(ompTurnFile({ effort: "xhigh" }), { thinking: "xhigh" });
+  assert.deepEqual(ompTurnFile({ effort: "ultra" }), { thinking: "" });
+  assert.deepEqual(ompTurnFile({}), { thinking: "" });
 });
 
 test("keeps OMP tools foreground with a thirty-minute provider watchdog", () => {

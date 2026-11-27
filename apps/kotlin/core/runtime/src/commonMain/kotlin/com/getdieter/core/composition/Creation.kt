@@ -13,6 +13,7 @@ import com.getdieter.core.board.Lanes
 import com.getdieter.core.presentation.Counts
 import com.getdieter.core.providers.AgentAccountRules
 import com.getdieter.core.providers.AgentAccounts
+import com.getdieter.core.providers.OmpAccounts
 import com.getdieter.core.providers.ProviderKinds
 import com.getdieter.core.providers.ProvidersView
 import com.getdieter.core.runtime.CoreLogger
@@ -490,12 +491,12 @@ class CreationMemory(private val storage: CoreStorage, private val logger: CoreL
                 HarnessSelection(saved.provider, saved.model, saved.effort, saved.provider_options),
                 harnesses,
             )
-            ?.let { it.copy(account_id = account(it.provider)) }
+            ?.let { it.copy(account_id = account(it.provider, it.model)) }
     }
 
-    /** The account last chosen for [harness]'s provider; "" for none. */
-    fun account(harness: String): String =
-        ProviderKinds.forHarness(harness)?.let { state.value.accounts[it] }.orEmpty()
+    /** The account last chosen for [harness]'s provider of [model]; "" for none. */
+    fun account(harness: String, model: String = ""): String =
+        accountKey(harness, model)?.let { state.value.accounts[it] }.orEmpty()
 
     val workspaceMode: WorkspaceMode
         get() = WorkspaceMode.parse(state.value.workspace_mode)
@@ -518,9 +519,9 @@ class CreationMemory(private val storage: CoreStorage, private val logger: CoreL
                     provider_options = selection.provider_options,
                 )
             // Each provider remembers its own account; choosing none keeps the last one.
-            val provider = ProviderKinds.forHarness(selection.provider)
-            if (provider != null && selection.account_id.isNotEmpty())
-                next = next.copy(accounts = next.accounts + (provider to selection.account_id))
+            val key = accountKey(selection.provider, selection.model)
+            if (key != null && selection.account_id.isNotEmpty())
+                next = next.copy(accounts = next.accounts + (key to selection.account_id))
         }
         if (workspaceMode != null) next = next.copy(workspace_mode = workspaceMode.wire)
         if (projectId != null) {
@@ -569,6 +570,15 @@ class CreationMemory(private val storage: CoreStorage, private val logger: CoreL
 
     private companion object {
         const val FILE = "creation.pb"
+
+        /**
+         * Where an account choice is remembered: per provider, apart for Oh My Pi, which may only
+         * use some of a provider's accounts.
+         */
+        fun accountKey(harness: String, model: String): String? {
+            val provider = ProviderKinds.forSelection(harness, model) ?: return null
+            return if (harness == OmpAccounts.HARNESS) "$harness/$provider" else provider
+        }
     }
 }
 

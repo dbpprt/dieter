@@ -154,6 +154,17 @@ import Observation
         }
     }
 
+    /// Lets Oh My Pi use a Claude login, once the user confirmed the core's
+    /// warning; or stops it.
+    package func setOmpAccess(accountID: String, allowed: Bool) async {
+        await run {
+            $0.setOmpAccess = .with {
+                $0.accountID = accountID
+                $0.allowed = allowed
+            }
+        }
+    }
+
     package func refreshUsage(accountID: String) async {
         await run { $0.refreshUsage = .with { $0.accountID = accountID } }
     }

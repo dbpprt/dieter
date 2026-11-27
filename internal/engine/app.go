@@ -97,6 +97,7 @@ type Options struct {
 // (internal/engine/accounts).
 type ProviderAccounts interface {
 	ResolveTurn(ctx context.Context, harness, accountID string) (accounts.TurnAuth, error)
+	ResolveOMPTurn(ctx context.Context, model, accountID, advisorModel, advisorAccountID string) (accounts.OMPTurn, error)
 	QuickTitleAuth(ctx context.Context) (accounts.TurnAuth, bool)
 	ObserveUsage(accountID string, data json.RawMessage)
 	MarkExpired(accountID, reason string)

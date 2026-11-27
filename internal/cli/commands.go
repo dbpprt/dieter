@@ -58,7 +58,7 @@ func commandTable() []command {
 			aliases:     []string{"providers"},
 			summary:     "Add Claude and ChatGPT accounts, sign in on machines, read plan usage",
 			run:         (*CLI).rpcProvider,
-			subcommands: []string{"list", "add", "rename", "include", "exclude", "default", "remove", "login", "logout", "check", "usage", "reset", "token"},
+			subcommands: []string{"list", "add", "rename", "include", "exclude", "default", "omp-access", "remove", "login", "logout", "check", "usage", "reset", "token"},
 		},
 		{
 			name:        "project",

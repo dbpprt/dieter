@@ -105,6 +105,23 @@ class ProviderCommands(
             }
             return done
         }
+        command.set_omp_access?.let { access ->
+            if (known(access.account_id).provider != ProviderKinds.CLAUDE)
+                throw CoreException(
+                    FailureKind.PERMANENT,
+                    "Only Claude accounts need Oh My Pi access; ChatGPT logins work as they are.",
+                )
+            accountWide(access.account_id) { api ->
+                api.UpdateProviderAccount()
+                    .execute(
+                        UpdateProviderAccountRequest(
+                            account_id = access.account_id,
+                            omp_access = access.allowed,
+                        )
+                    )
+            }
+            return done
+        }
         command.sign_in?.let {
             val id = signIn.start(required(it.account_id), required(it.daemon_id), it.flow)
             return Result(provider_sign_in = ProviderSignInStarted(id))
@@ -212,6 +229,7 @@ class ProviderCommands(
                 includeInSummary = created.include_in_summary,
                 createdAt = created.created_at,
                 createdBy = created.created_by,
+                ompAccess = created.omp_access,
             )
         accounts.created(PendingAccount(record, created.is_default, machine))
         return record.id

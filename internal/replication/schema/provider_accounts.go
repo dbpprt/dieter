@@ -84,9 +84,11 @@ type ProviderAccountRecord struct {
 	Method           string            `json:"method"`
 	Identity         *ProviderIdentity `json:"identity,omitempty"`
 	IncludeInSummary bool              `json:"includeInSummary"`
-	SIWC             *ProviderSIWC     `json:"siwc,omitempty"`
-	CreatedAt        string            `json:"createdAt"`
-	CreatedBy        string            `json:"createdBy"`
+	// OMPAccess lets Oh My Pi turns use a Claude login (Claude only).
+	OMPAccess bool          `json:"ompAccess,omitempty"`
+	SIWC      *ProviderSIWC `json:"siwc,omitempty"`
+	CreatedAt string        `json:"createdAt"`
+	CreatedBy string        `json:"createdBy"`
 }
 
 // ProviderDefaultRecord names a provider's default account.
@@ -257,6 +259,9 @@ func DecodeProviderAccount(key string, raw []byte) (ProviderAccountRecord, error
 	}
 	if value.Identity != nil && !validProviderIdentity(*value.Identity) {
 		return value, fault.New(fault.Invalid, "invalid provider account identity")
+	}
+	if value.OMPAccess && value.Provider != ProviderClaude {
+		return value, fault.New(fault.Invalid, "only Claude accounts have Oh My Pi access")
 	}
 	if value.SIWC != nil && (value.Method != MethodSIWC || !validClientID(value.SIWC.ClientID)) {
 		return value, fault.New(fault.Invalid, "invalid Sign in with ChatGPT client")

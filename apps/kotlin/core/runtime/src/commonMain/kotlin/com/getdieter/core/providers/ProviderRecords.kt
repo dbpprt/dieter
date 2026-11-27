@@ -31,6 +31,8 @@ data class AccountRecord(
     val includeInSummary: Boolean = true,
     val createdAt: String = "",
     val createdBy: String = "",
+    /** Claude only: Oh My Pi turns may use this login ([OmpAccounts]). */
+    val ompAccess: Boolean = false,
 )
 
 data class UsageWindowRecord(
@@ -150,6 +152,7 @@ data class ProviderRecords(
                 includeInSummary = value.bool("includeInSummary") ?: true,
                 createdAt = value.string("createdAt"),
                 createdBy = value.string("createdBy"),
+                ompAccess = provider == ProviderKinds.CLAUDE && value.bool("ompAccess") == true,
             )
         }
 
@@ -287,6 +290,13 @@ object ProviderKinds {
             "codex" -> CHATGPT
             else -> null
         }
+
+    /**
+     * The provider whose accounts [harness] runs [model] on: Oh My Pi follows its model's provider
+     * ([OmpAccounts.provider]), other harnesses [forHarness].
+     */
+    fun forSelection(harness: String, model: String): String? =
+        if (harness == OmpAccounts.HARNESS) OmpAccounts.provider(model) else forHarness(harness)
 
     fun name(provider: String): String =
         when (provider) {

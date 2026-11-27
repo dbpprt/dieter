@@ -77,7 +77,7 @@ func (r registry) account(id string) (Account, bool) {
 	account := Account{
 		ID: id, Provider: record.Provider, Label: record.Label, Method: record.Method,
 		IncludeInSummary: record.IncludeInSummary, IsDefault: r.defaults[record.Provider] == id,
-		CreatedAt: record.CreatedAt, CreatedBy: record.CreatedBy,
+		OMPAccess: record.OMPAccess, CreatedAt: record.CreatedAt, CreatedBy: record.CreatedBy,
 	}
 	if record.Identity != nil {
 		account.Identity = *record.Identity
@@ -222,8 +222,9 @@ func (s *Service) createAccount(id, provider, label, method string, identity *Id
 	return nil
 }
 
-// Update renames an account or changes whether it counts in summaries.
-func (s *Service) Update(_ context.Context, id string, label *string, includeInSummary *bool) (Account, error) {
+// Update renames an account, changes whether it counts in summaries, or
+// whether Oh My Pi turns may use it (Claude accounts only).
+func (s *Service) Update(_ context.Context, id string, label *string, includeInSummary, ompAccess *bool) (Account, error) {
 	if _, err := s.writerDaemon(); err != nil {
 		return Account{}, err
 	}
@@ -244,6 +245,12 @@ func (s *Service) Update(_ context.Context, id string, label *string, includeInS
 		}
 		if includeInSummary != nil {
 			next.IncludeInSummary = *includeInSummary
+		}
+		if ompAccess != nil {
+			if next.Provider != schema.ProviderClaude && *ompAccess {
+				return nil, fault.New(fault.Invalid, "only Claude accounts need Oh My Pi access; ChatGPT accounts always have it")
+			}
+			next.OMPAccess = *ompAccess
 		}
 		return &next, nil
 	})

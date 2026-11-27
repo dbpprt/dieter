@@ -269,32 +269,52 @@ func TestConfiguredEffortValidationIsProviderAndModelAware(t *testing.T) {
 	}
 }
 
-func TestCatalogIncludesConfiguredOMPModels(t *testing.T) {
+func TestCatalogOffersManagedOMPModelsAndAdvisor(t *testing.T) {
 	adapter, valid := StaticCatalog(false).ResolveAdapter("omp")
-	if !valid || adapter.Runtime != "omp-acp" || adapter.DefaultModel != "openai-codex/gpt-6-sol" || len(adapter.Models) != 3 {
+	if !valid || adapter.Runtime != "omp-acp" || adapter.DefaultModel != "anthropic/claude-sonnet-5-5" || len(adapter.Models) != 7 {
 		t.Fatalf("omp catalog=%#v valid=%v", adapter, valid)
 	}
-	if adapter.Models[0].RuntimeID() != "openai-codex/gpt-6-luna" || adapter.Models[0].ContextWindow != 272000 || adapter.Models[2].ID != "openai-codex/gpt-6-astra" {
-		t.Fatalf("omp models=%#v", adapter.Models)
+	for _, model := range adapter.Models {
+		if !strings.HasPrefix(model.ID, "anthropic/") && !strings.HasPrefix(model.ID, "openai-codex/") {
+			t.Fatalf("OMP offers an unmanaged model %q", model.ID)
+		}
 	}
-	if adapter.Effort == nil || len(adapter.Effort.Options) != 8 || len(adapter.Capabilities) != 3 || adapter.Capabilities[0] != (Capability{ID: "model-selection", Level: "between-turns"}) || adapter.Capabilities[1] != (Capability{ID: "subagents", Level: "progress"}) || adapter.Capabilities[2] != (Capability{ID: "task-plan", Level: "phases"}) {
-		t.Fatalf("omp capabilities or effort=%#v %#v", adapter.Capabilities, adapter.Effort)
+	for _, id := range []string{"model-selection", "effort-selection", "account-selection"} {
+		if !containsCapability(adapter.Capabilities, Capability{ID: id, Level: "between-turns"}) {
+			t.Fatalf("omp capabilities=%#v miss %s", adapter.Capabilities, id)
+		}
 	}
-	if len(adapter.Options) != 1 || adapter.Options[0].ID != "advisor" || adapter.Options[0].Type != "boolean" {
-		t.Fatalf("omp options=%#v", adapter.Options)
+	options, err := ResolveOptions(adapter, nil)
+	if err != nil || options["advisor_model"] != "off" || options["advisor_effort"] != "medium" {
+		t.Fatalf("omp default options=%#v err=%v", options, err)
 	}
-	if options, err := ResolveOptions(adapter, map[string]string{"advisor": "true"}); err != nil || options["advisor"] != "true" {
+	options, err = ResolveOptions(adapter, map[string]string{"advisor_model": "openai-codex/gpt-6-sol", "advisor_effort": "high", "advisor_account": "pa_x"})
+	if err != nil || options["advisor_model"] != "openai-codex/gpt-6-sol" || options["advisor_account"] != "pa_x" {
 		t.Fatalf("omp advisor options=%#v err=%v", options, err)
 	}
-	if options, err := ResolveOptions(adapter, nil); err != nil || options["advisor"] != "false" {
-		t.Fatalf("omp default advisor options=%#v err=%v", options, err)
+	if _, err := ResolveOptions(adapter, map[string]string{"advisor_model": "tailscale/glm"}); err == nil {
+		t.Fatal("an unmanaged advisor model was accepted")
 	}
-	if _, err := ResolveOptions(adapter, map[string]string{"advisor": "sometimes"}); err == nil {
-		t.Fatal("invalid OMP advisor value was accepted")
+	if _, err := ResolveOptions(adapter, map[string]string{"advisor": "true"}); err == nil {
+		t.Fatal("the removed boolean advisor option was accepted")
+	}
+	before := map[string]string{"advisor_model": "off", "advisor_effort": "medium", "advisor_account": ""}
+	after := map[string]string{"advisor_model": "anthropic/claude-opus-5-5", "advisor_effort": "max", "advisor_account": "pa_y"}
+	if err := ValidateOptionUpdate(adapter, before, after); err != nil {
+		t.Fatalf("advisor options must change between turns: %v", err)
 	}
 	if effort, err := ResolveEffort(adapter, adapter.Models[0], "max"); err != nil || effort != "max" {
 		t.Fatalf("omp max effort=%q err=%v", effort, err)
 	}
+}
+
+func containsCapability(capabilities []Capability, want Capability) bool {
+	for _, capability := range capabilities {
+		if capability == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestResolveOptionsSupportsAdapterDefinedTypes(t *testing.T) {
@@ -698,56 +718,6 @@ func TestSubprocessRunnerMockIntegration(t *testing.T) {
 	capabilityStream := strings.Join(capabilities, "")
 	if err != nil || heartbeats == 0 || !strings.Contains(stream, "Mock harness received: hello") || !strings.Contains(stream, `"messageId":"assistant_1"`) || !strings.Contains(stream, `"type":"message-metadata"`) || !strings.Contains(stream, `"messageMetadata":{"createdAt":`) || !strings.Contains(stream, `"totalTokens":150`) || !strings.Contains(stream, `"contextWindowTokens":1000`) || !strings.Contains(capabilityStream, `"id":"task-plan"`) || !strings.Contains(capabilityStream, `"state":"completed"`) {
 		t.Fatalf("chunks=%q capabilities=%q heartbeats=%d err=%v", chunks, capabilities, heartbeats, err)
-	}
-}
-
-func TestSubprocessRunnerOMPLiveModels(t *testing.T) {
-	if os.Getenv("DIETER_TEST_OMP_E2E") != "1" {
-		t.Skip("set DIETER_TEST_OMP_E2E=1 to run the curated OMP models")
-	}
-	repo := filepath.Join(t.TempDir(), "repo")
-	if err := os.MkdirAll(repo, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	runner := NewSubprocessRunner(t.TempDir(), Environment{})
-	runtimeRoot := filepath.Join(t.TempDir(), "runtime")
-	models := []struct {
-		id       string
-		expected string
-	}{
-		{id: "openai-codex/gpt-6-luna", expected: "OMP_E2E_OK_LUNA"},
-		{id: "openai-codex/gpt-6-sol", expected: "OMP_E2E_OK_SOL"},
-		{id: "openai-codex/gpt-6-astra", expected: "OMP_E2E_OK_ASTRA"},
-	}
-	for index, model := range models {
-		t.Run(filepath.Base(model.id), func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-			defer cancel()
-			var chunks []string
-			var response strings.Builder
-			err := runner.Run(ctx, Request{
-				Harness: "omp", Adapter: "omp-acp", Model: model.id, ConfiguredModel: model.id, Effort: "low",
-				Prompt:    "Reply with exactly " + model.expected + " and nothing else. Do not use tools.",
-				SessionID: "omp-e2e-" + string(rune('a'+index)), ResponseMessageID: "assistant_omp_e2e",
-				ProjectPath: repo, RuntimeRoot: runtimeRoot,
-			}, func(output Output) error {
-				if output.Type == "chunk" {
-					chunks = append(chunks, string(output.Chunk))
-					var chunk struct {
-						Type  string `json:"type"`
-						Delta string `json:"delta"`
-					}
-					if json.Unmarshal(output.Chunk, &chunk) == nil && chunk.Type == "text-delta" {
-						response.WriteString(chunk.Delta)
-					}
-				}
-				return nil
-			})
-			stream := strings.Join(chunks, "")
-			if err != nil || !strings.Contains(response.String(), model.expected) {
-				t.Fatalf("model=%s response=%q stream=%q err=%v", model.id, response.String(), stream, err)
-			}
-		})
 	}
 }
 

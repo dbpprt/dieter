@@ -1,0 +1,15 @@
+== t1-claude exit=0 load=new set=-
+    /v1/messages claude-sonnet-5-5 effort=low
+    /v1/messages claude-sonnet-5-5 effort=between_tools
+    /v1/messages claude-sonnet-5-5 effort=between_tools
+    /v1/messages claude-sonnet-5-5 effort=between_tools
+    acp status=ok stop=end_turn reply="ANTHROPIC-MAIN-OK" session=01a21a8e-8bb2-703f-b04d-4b3a9776176e modelOption=anthropic/claude-sonnet-5-5
+== t2a-overlay-only exit=0 load=01a21a8e-8bb2-703f-b04d-4b3a9776176e set=-
+    /v1/messages claude-sonnet-5-5 effort=low
+    /v1/messages claude-opus-5-5 effort=medium
+    acp status=ok stop=end_turn reply="ANTHROPIC-MAIN-OKANTHROPIC-MAIN-OK" session=01a21a8e-8bb2-703f-b04d-4b3a9776176e modelOption=anthropic/claude-sonnet-5-5
+== t2b-overlay-and-option exit=0 load=01a21a8e-8bb2-703f-b04d-4b3a9776176e set=model=openai-codex/gpt-6-sol,thinking=high
+    /backend-api/codex/responses gpt-6-sol effort=high
+    /v1/messages claude-opus-5-5 effort=medium
+    acp status=ok stop=end_turn reply="ANTHROPIC-MAIN-OKANTHROPIC-MAIN-OKCODEX-MAIN-OK" session=01a21a8e-8bb2-703f-b04d-4b3a9776176e modelOption=anthropic/claude-sonnet-5-5
+history across the provider switch: carried

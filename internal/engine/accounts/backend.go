@@ -30,8 +30,13 @@ type Backend interface {
 	// RefreshCodex asks Codex to rotate the home's tokens now.
 	RefreshCodex(ctx context.Context, home CodexAuthHome) error
 
-	// ProbeClaudeUsage reads plan usage through the Agent SDK.
+	// ProbeClaudeUsage reads plan usage through the Agent SDK. Claude Code
+	// renews a due login before the request, so it also refreshes.
 	ProbeClaudeUsage(ctx context.Context, configDir string) (ClaudeProbe, error)
+	// ReadClaudeToken reads the access token and its expiry from Claude
+	// Code's own store for a config directory ("" is the host default).
+	// Only Oh My Pi turns with the account's opt-in use it (ADR 0007).
+	ReadClaudeToken(ctx context.Context, configDir string) (ClaudeToken, error)
 	// ProbeCodexUsage reads rate limits through account/rateLimits/read.
 	ProbeCodexUsage(ctx context.Context, home CodexAuthHome) (Usage, error)
 	// ConsumeCodexReset spends a rate-limit reset credit and returns the
@@ -126,6 +131,13 @@ type ClaudeProbe struct {
 	LoggedIn bool     `json:"loggedIn"`
 	Identity Identity `json:"identity"`
 	Usage    Usage    `json:"usage"`
+}
+
+// ClaudeToken is a Claude login's current access token. Never a refresh
+// token.
+type ClaudeToken struct {
+	AccessToken string
+	ExpiresAt   time.Time
 }
 
 // SIWCTokens is one host's Sign in with ChatGPT session (siwc.json, 0600).

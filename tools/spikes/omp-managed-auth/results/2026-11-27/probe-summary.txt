@@ -1,0 +1,48 @@
+== print-claude-main-codex-advisor (print): main=anthropic/claude-sonnet-5-5 advisor=openai-codex/gpt-6-sol
+exit 0
+    POST  /v1/messages  role=main  claude-sonnet-5-5  effort=high  cred=anthropic-token    claude-cli/2.1.326 (external, cli)
+    POST  /backend-api/codex/responses  role=advisor  gpt-6-sol  effort=medium  cred=codex-token  acct=acct-dieter-spike  omp/19.2.1
+    GET  /v1/models  role=-  -  effort=-  cred=anthropic-token    Bun/1.4.5
+   reply: ANTHROPIC-MAIN-OK
+== print-codex-main-claude-advisor (print): main=openai-codex/gpt-6-sol advisor=anthropic/claude-opus-5-5
+exit 0
+    POST  /backend-api/codex/responses  role=main  gpt-6-sol  effort=high  cred=codex-token  acct=acct-dieter-spike  omp/19.2.1
+    POST  /v1/messages  role=advisor  claude-opus-5-5  effort=medium  cred=anthropic-token    claude-cli/2.1.326 (external, cli)
+    GET  /v1/models  role=-  -  effort=-  cred=anthropic-token    Bun/1.4.5
+   reply: CODEX-MAIN-OK
+== acp-claude-main-codex-advisor (acp): main=anthropic/claude-opus-5-5 advisor=openai-codex/gpt-6-luna
+exit 0
+    POST  /v1/messages  role=main  claude-opus-5-5  effort=high  cred=anthropic-token    claude-cli/2.1.326 (external, cli)
+    POST  /backend-api/codex/responses  role=advisor  gpt-6-luna  effort=medium  cred=codex-token  acct=acct-dieter-spike  omp/19.2.1
+    GET  /v1/models  role=-  -  effort=-  cred=anthropic-token    Bun/1.4.5
+    POST  /v1/messages  role=main  claude-opus-5-5  effort=low  cred=anthropic-token    claude-cli/2.1.326 (external, cli)
+    POST  /v1/messages  role=main  claude-opus-5-5  effort=low  cred=anthropic-token    claude-cli/2.1.326 (external, cli)
+    POST  /v1/messages  role=main  claude-opus-5-5  effort=low  cred=anthropic-token    claude-cli/2.1.326 (external, cli)
+   acp: status=ok stop=end_turn reply="ANTHROPIC-MAIN-OK" updates=["agent_message_chunk","available_commands_update","session_info_update","usage_update"]
+== acp-codex-main-claude-advisor (acp): main=openai-codex/gpt-6-sol advisor=anthropic/claude-sonnet-5-5
+exit 0
+    POST  /backend-api/codex/responses  role=main  gpt-6-sol  effort=high  cred=codex-token  acct=acct-dieter-spike  omp/19.2.1
+    POST  /v1/messages  role=advisor  claude-sonnet-5-5  effort=medium  cred=anthropic-token    claude-cli/2.1.326 (external, cli)
+    GET  /v1/models  role=-  -  effort=-  cred=anthropic-token    Bun/1.4.5
+    POST  /backend-api/codex/responses  role=main  gpt-6-sol  effort=low  cred=codex-token  acct=acct-dieter-spike  omp/19.2.1
+    POST  /backend-api/codex/responses  role=main  gpt-6-sol  effort=low  cred=codex-token  acct=acct-dieter-spike  omp/19.2.1
+    POST  /backend-api/codex/responses  role=main  gpt-6-sol  effort=low  cred=codex-token  acct=acct-dieter-spike  omp/19.2.1
+   acp: status=ok stop=end_turn reply="CODEX-MAIN-OK" updates=["available_commands_update","session_info_update","agent_message_chunk","usage_update"]
+== acp-overlay-beats-user-config (acp): main=openai-codex/gpt-6-sol advisor=anthropic/claude-opus-5-5 user-config-advisor=openai-codex/gpt-6-astra
+exit 0
+    POST  /backend-api/codex/responses  role=main  gpt-6-sol  effort=high  cred=codex-token  acct=acct-dieter-spike  omp/19.2.1
+    POST  /v1/messages  role=advisor  claude-opus-5-5  effort=medium  cred=anthropic-token    claude-cli/2.1.326 (external, cli)
+    GET  /v1/models  role=-  -  effort=-  cred=anthropic-token    Bun/1.4.5
+    POST  /backend-api/codex/responses  role=main  gpt-6-sol  effort=low  cred=codex-token  acct=acct-dieter-spike  omp/19.2.1
+    POST  /backend-api/codex/responses  role=main  gpt-6-sol  effort=low  cred=codex-token  acct=acct-dieter-spike  omp/19.2.1
+    POST  /backend-api/codex/responses  role=main  gpt-6-sol  effort=low  cred=codex-token  acct=acct-dieter-spike  omp/19.2.1
+   acp: status=ok stop=end_turn reply="CODEX-MAIN-OK" updates=["agent_message_chunk","available_commands_update","session_info_update","usage_update"]
+== acp-pinned-roles-advisor-effort (acp): main=anthropic/claude-sonnet-5-5 advisor=openai-codex/gpt-6-sol:low
+exit 0
+    POST  /v1/messages  role=main  claude-sonnet-5-5  effort=high  cred=anthropic-token    claude-cli/2.1.326 (external, cli)
+    POST  /backend-api/codex/responses  role=advisor  gpt-6-sol  effort=low  cred=codex-token  acct=acct-dieter-spike  omp/19.2.1
+    GET  /v1/models  role=-  -  effort=-  cred=anthropic-token    Bun/1.4.5
+    POST  /v1/messages  role=main  claude-sonnet-5-5  effort=between_tools  cred=anthropic-token    claude-cli/2.1.326 (external, cli)
+    POST  /v1/messages  role=main  claude-sonnet-5-5  effort=between_tools  cred=anthropic-token    claude-cli/2.1.326 (external, cli)
+    POST  /v1/messages  role=main  claude-sonnet-5-5  effort=between_tools  cred=anthropic-token    claude-cli/2.1.326 (external, cli)
+   acp: status=ok stop=end_turn reply="ANTHROPIC-MAIN-OK" updates=["agent_message_chunk","available_commands_update","session_info_update","usage_update"]

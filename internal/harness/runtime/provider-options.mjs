@@ -62,20 +62,66 @@ function canonicalize(value) {
   return value;
 }
 
-// OMP's CLI accepts every selector reported by `omp models`, while its ACP
-// model config option exposes only the user's small model-cycling list. Launch
-// bridges with the selected CLI model so Dieter's full discovered catalog
-// remains executable.
-export function ompACPArgs(request, hookPath, configPath) {
-  return [
-    "acp",
-    ...(configPath ? ["--config", configPath] : []),
-    "--hook",
-    hookPath,
-    ...(request.effort ? [`--thinking=${request.effort}`] : []),
-    ...(request.options?.advisor === "true" ? ["--advisor"] : []),
-    ...(request.model ? [`--model=${request.model}`] : []),
-  ];
+// Every chat role OMP may route a request through. Dieter pins them all to
+// the turn's implementation model, so no role resolves through OMP's own
+// priority chains, which could reach the other provider's account (ADR 0007).
+export const ompPinnedRoles = Object.freeze([
+  "default",
+  "smol",
+  "slow",
+  "vision",
+  "plan",
+  "commit",
+  "tiny",
+  "memory",
+  "task",
+  "widget",
+]);
+
+const ompSelector = /^(anthropic|openai-codex)\/[A-Za-z0-9._-]+$/;
+const ompThinking = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+
+function requireOMPSelector(value, what) {
+  if (typeof value !== "string" || !ompSelector.test(value)) {
+    throw new Error(
+      `Oh My Pi ${what} must be a Claude or ChatGPT model, not ${JSON.stringify(value)}`,
+    );
+  }
+  return value;
+}
+
+// The per-conversation settings overlay: Dieter's runtime settings, every
+// chat role pinned to the implementation model, and the advisor. A reviewing
+// advisor holds the main agent until its notes are in (syncBacklog strict),
+// because notes that arrive after the ACP prompt ends would be lost.
+export function ompConversationConfig(request) {
+  const model = requireOMPSelector(request.model, "model");
+  const advisorModel = request.options?.advisor_model;
+  const advisorOn =
+    typeof advisorModel === "string" && advisorModel !== "" && advisorModel !== "off";
+  const lines = [ompRuntimeConfig().trimEnd(), "modelRoles:"];
+  for (const role of ompPinnedRoles) lines.push(`  ${role}: ${JSON.stringify(model)}`);
+  if (advisorOn) {
+    const effort = request.options?.advisor_effort;
+    const level = ompThinking.has(effort) ? `:${effort}` : "";
+    lines.push(`  advisor: ${JSON.stringify(requireOMPSelector(advisorModel, "advisor") + level)}`);
+    lines.push("advisor:", "  enabled: true", "  reviewMode: agent-end", "  syncBacklog: strict");
+  } else {
+    lines.push("advisor:", "  enabled: false");
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+// What the capabilities hook applies at the start of each prompt. The model
+// itself reaches OMP through ACP's model config option (modelMapping).
+export function ompTurnFile(request) {
+  return { thinking: ompThinking.has(request.effort) ? request.effort : "" };
+}
+
+// Launch arguments never depend on the request: they are part of the ACP
+// implementation identity a conversation's next turn must match to resume.
+export function ompACPArgs({ hookPath, configPath }) {
+  return ["acp", "--config", configPath, "--hook", hookPath];
 }
 
 export const dshPackageVersion = "0.2.1-rc.5";

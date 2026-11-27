@@ -116,39 +116,45 @@ func (s *Service) codexHomeOf(account Account) (CodexAuthHome, error) {
 // asking Codex to refresh it first when it is due. One refresher acts per
 // account at a time.
 func (s *Service) codexToken(ctx context.Context, account Account) (string, error) {
+	token, _, err := s.codexAccessToken(ctx, account)
+	return token, err
+}
+
+// codexAccessToken is codexToken with the token's expiry.
+func (s *Service) codexAccessToken(ctx context.Context, account Account) (string, time.Time, error) {
 	home, err := s.codexHomeOf(account)
 	if err != nil {
-		return "", err
+		return "", time.Time{}, err
 	}
 	release, err := s.lockAccount(ctx, account.ID)
 	if err != nil {
-		return "", err
+		return "", time.Time{}, err
 	}
 	defer release()
 	auth, err := readCodexAuth(home.Dir)
 	if err != nil {
 		s.markExpired(account.ID, "Codex has no ChatGPT login for this account on this machine")
-		return "", s.notSignedIn(account)
+		return "", time.Time{}, s.notSignedIn(account)
 	}
 	now := s.now()
 	if !auth.due(now) {
-		return auth.AccessToken, nil
+		return auth.AccessToken, auth.Expires, nil
 	}
 	refreshCtx, cancel := context.WithTimeout(ctx, refreshTimeout)
 	defer cancel()
 	if err := s.backend.RefreshCodex(refreshCtx, home); err != nil {
 		if auth.Expires.After(now) {
 			s.log.Warn("Codex token refresh failed; using the current token", "account", account.ID, "error", err)
-			return auth.AccessToken, nil
+			return auth.AccessToken, auth.Expires, nil
 		}
 		s.markExpired(account.ID, "Codex could not refresh this account's ChatGPT login")
-		return "", s.notSignedIn(account)
+		return "", time.Time{}, s.notSignedIn(account)
 	}
 	refreshed, err := readCodexAuth(home.Dir)
 	if err != nil {
-		return "", s.notSignedIn(account)
+		return "", time.Time{}, s.notSignedIn(account)
 	}
-	return refreshed.AccessToken, nil
+	return refreshed.AccessToken, refreshed.Expires, nil
 }
 
 // TurnToken returns the current access token of a Sign in with ChatGPT

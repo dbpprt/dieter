@@ -45,6 +45,7 @@ type fakeProviderClient struct {
 	refreshed []string
 	reset     *dieterv1.ConsumeProviderUsageResetRequest
 	outcome   string
+	token     *dieterv1.GetProviderTurnTokenRequest
 
 	state       *dieterv1.State
 	card        *dieterv1.CardDetail
@@ -86,7 +87,7 @@ func (f *fakeProviderClient) CreateProviderAccount(_ context.Context, in *dieter
 func (f *fakeProviderClient) UpdateProviderAccount(_ context.Context, in *dieterv1.UpdateProviderAccountRequest, _ ...grpc.CallOption) (*dieterv1.ProviderAccount, error) {
 	f.record("update")
 	f.updated = in
-	return &dieterv1.ProviderAccount{Id: in.GetAccountId(), Label: in.GetLabel()}, nil
+	return &dieterv1.ProviderAccount{Id: in.GetAccountId(), Label: in.GetLabel(), OmpAccess: in.GetOmpAccess()}, nil
 }
 
 func (f *fakeProviderClient) DeleteProviderAccount(_ context.Context, in *dieterv1.DeleteProviderAccountRequest, _ ...grpc.CallOption) (*emptypb.Empty, error) {
@@ -154,8 +155,15 @@ func (f *fakeProviderClient) ConsumeProviderUsageReset(_ context.Context, in *di
 	return &dieterv1.ConsumeProviderUsageResetResponse{Outcome: f.outcome}, nil
 }
 
-func (f *fakeProviderClient) GetProviderTurnToken(context.Context, *dieterv1.GetProviderTurnTokenRequest, ...grpc.CallOption) (*dieterv1.ProviderTurnToken, error) {
+func (f *fakeProviderClient) GetProviderTurnToken(_ context.Context, in *dieterv1.GetProviderTurnTokenRequest, _ ...grpc.CallOption) (*dieterv1.ProviderTurnToken, error) {
 	f.record("token")
+	f.token = in
+	switch in.GetProvider() {
+	case dieterv1.ProviderKind_PROVIDER_KIND_CLAUDE:
+		return &dieterv1.ProviderTurnToken{Token: "sk-ant-oat01-turn"}, nil
+	case dieterv1.ProviderKind_PROVIDER_KIND_CHATGPT:
+		return &dieterv1.ProviderTurnToken{Token: "chatgpt-access-token"}, nil
+	}
 	return &dieterv1.ProviderTurnToken{Token: "siwc-access-token", ExpiresAt: "2026-11-14T13:00:00Z"}, nil
 }
 
@@ -210,7 +218,7 @@ func providerAccounts() []*dieterv1.ProviderAccount {
 	return []*dieterv1.ProviderAccount{
 		{
 			Id: "pa_work", Provider: dieterv1.ProviderKind_PROVIDER_KIND_CLAUDE, Label: "Work", Method: dieterv1.ProviderLoginMethod_PROVIDER_LOGIN_METHOD_CLAUDE_CODE,
-			Identity: &dieterv1.ProviderIdentity{Email: "me@example.com", Organization: "Acme"}, IsDefault: true, IncludeInSummary: true,
+			Identity: &dieterv1.ProviderIdentity{Email: "me@example.com", Organization: "Acme"}, IsDefault: true, IncludeInSummary: true, OmpAccess: true,
 			Logins: []*dieterv1.ProviderMachineLogin{
 				{DaemonId: "d_here", State: signedIn, Identity: &dieterv1.ProviderIdentity{Email: "me@example.com"}, VerifiedAt: "2026-11-14T10:00:00Z"},
 				{DaemonId: "d_two", State: signedIn},
@@ -252,16 +260,19 @@ func TestProviderListShowsTightestWindowAndMachines(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-	if len(lines) != 5 || strings.Join(strings.Fields(lines[0]), " ") != "ID PROVIDER LABEL METHOD DEFAULT IDENTITY USAGE MACHINES" {
+	if len(lines) != 5 || strings.Join(strings.Fields(lines[0]), " ") != "ID PROVIDER LABEL METHOD DEFAULT OMP IDENTITY USAGE MACHINES" {
 		t.Fatalf("table:\n%s", out.String())
 	}
 	work := strings.Join(strings.Fields(lines[1]), " ")
-	if work != "pa_work claude Work claude-code yes me@example.com (Acme) 62% left 2/3 signed in" {
+	if work != "pa_work claude Work claude-code yes on me@example.com (Acme) 62% left 2/3 signed in" {
 		t.Fatalf("work row = %q", work)
 	}
 	home := strings.Join(strings.Fields(lines[2]), " ")
-	if home != "pa_home chatgpt Home codex - signed out not signed in" {
+	if home != "pa_home chatgpt Home codex - - signed out not signed in" {
 		t.Fatalf("home row = %q", home)
+	}
+	if twin := strings.Join(strings.Fields(lines[3]), " "); !strings.HasPrefix(twin, "pa_twin1 claude Twin - off ") {
+		t.Fatalf("twin row = %q", twin)
 	}
 
 	out.Reset()
@@ -358,7 +369,7 @@ func TestProviderMutationsRefuseAgentTurns(t *testing.T) {
 	t.Parallel()
 	for _, args := range [][]string{
 		{"add", "claude", "--label", "X"}, {"rename", "Work", "Y"}, {"include", "Work"}, {"exclude", "Work"},
-		{"default", "Work"}, {"remove", "Work", "--confirm", "REMOVE"}, {"login", "Work", "--code", "C"},
+		{"default", "Work"}, {"omp-access", "Work", "on"}, {"remove", "Work", "--confirm", "REMOVE"}, {"login", "Work", "--code", "C"},
 		{"logout", "Work"}, {"reset", "Home", "--confirm", "RESET"},
 	} {
 		fake := &fakeProviderClient{}
@@ -408,8 +419,79 @@ func TestProviderTokenNeedsTheTurnAndItsOwnMachine(t *testing.T) {
 	if out.String() != "siwc-access-token\n" {
 		t.Fatalf("token output = %q", out.String())
 	}
-	if calls := fake.callList(); len(calls) != 1 || calls[0] != "token" {
-		t.Fatalf("calls = %v", calls)
+	if calls := fake.callList(); len(calls) != 1 || calls[0] != "token" || fake.token.GetProvider() != dieterv1.ProviderKind_PROVIDER_KIND_UNSPECIFIED {
+		t.Fatalf("calls = %v, request %v", calls, fake.token)
+	}
+
+	// Oh My Pi asks per provider; the token is the whole output.
+	for provider, want := range map[string]struct {
+		kind  dieterv1.ProviderKind
+		token string
+	}{
+		"claude":  {dieterv1.ProviderKind_PROVIDER_KIND_CLAUDE, "sk-ant-oat01-turn"},
+		"chatgpt": {dieterv1.ProviderKind_PROVIDER_KIND_CHATGPT, "chatgpt-access-token"},
+	} {
+		out.Reset()
+		if err := c.Run([]string{"provider", "token", "--turn", "--provider", provider}); err != nil {
+			t.Fatal(err)
+		}
+		if out.String() != want.token+"\n" || fake.token.GetProvider() != want.kind {
+			t.Fatalf("--provider %s printed %q for request %v", provider, out.String(), fake.token)
+		}
+	}
+	before := len(fake.callList())
+	if err := c.Run([]string{"provider", "token", "--turn", "--provider", "openai-codex"}); err == nil || !strings.Contains(err.Error(), "claude or chatgpt") {
+		t.Fatalf("an OMP provider name: %v", err)
+	}
+	c.Machine = "other"
+	if err := c.Run([]string{"provider", "token", "--turn", "--provider", "claude"}); err == nil || !strings.Contains(err.Error(), "omit --machine") {
+		t.Fatalf("--provider with --machine: %v", err)
+	}
+	c.Machine, c.env.TurnToken = "", ""
+	if err := c.Run([]string{"provider", "token", "--turn", "--provider", "claude"}); err == nil || !strings.Contains(err.Error(), "DIETER_TURN_TOKEN") {
+		t.Fatalf("--provider outside a turn: %v", err)
+	}
+	if calls := fake.callList(); len(calls) != before {
+		t.Fatalf("refused token calls reached the daemon: %v", calls[before:])
+	}
+}
+
+func TestProviderOMPAccessTogglesClaudeAccountsOnly(t *testing.T) {
+	t.Parallel()
+	fake := &fakeProviderClient{}
+	c, out, _ := providerCLI(t, fake)
+	if err := c.Run([]string{"provider", "omp-access", "work", "on"}); err != nil {
+		t.Fatal(err)
+	}
+	if fake.updated.GetAccountId() != "pa_work" || fake.updated.OmpAccess == nil || !fake.updated.GetOmpAccess() || fake.updated.Label != nil || fake.updated.IncludeInSummary != nil {
+		t.Fatalf("on request = %v", fake.updated)
+	}
+	if text := out.String(); !strings.Contains(text, `Oh My Pi turns may now use "Work"`) || !strings.Contains(text, "Anthropic does not permit") {
+		t.Fatalf("on output = %q", text)
+	}
+	out.Reset()
+	if err := c.Run([]string{"provider", "omp-access", "Work", "OFF", "--format", "json"}); err != nil {
+		t.Fatal(err)
+	}
+	if fake.updated.OmpAccess == nil || fake.updated.GetOmpAccess() || !strings.Contains(out.String(), `"pa_work"`) || strings.Contains(out.String(), "ompAccess") {
+		t.Fatalf("off request = %v, output %q", fake.updated, out.String())
+	}
+	updates := strings.Count(strings.Join(fake.callList(), ","), "update")
+	if err := c.Run([]string{"provider", "omp-access", "Home", "on"}); err == nil || !strings.Contains(err.Error(), "only Claude accounts") {
+		t.Fatalf("a ChatGPT account: %v", err)
+	}
+	if err := c.Run([]string{"provider", "omp-access", "Work", "maybe"}); err == nil || !strings.Contains(err.Error(), "use on or off") {
+		t.Fatalf("an unknown state: %v", err)
+	}
+	if err := c.Run([]string{"provider", "omp-access", "Work"}); err == nil || !strings.Contains(err.Error(), "Usage: dieter provider omp-access") {
+		t.Fatalf("a missing state: %v", err)
+	}
+	if got := strings.Count(strings.Join(fake.callList(), ","), "update"); got != updates {
+		t.Fatalf("refused toggles reached the daemon: %v", fake.callList())
+	}
+	out.Reset()
+	if err := c.Run([]string{"provider", "omp-access", "--help"}); err != nil || !strings.Contains(out.String(), "Anthropic may block or suspend the account") || !strings.Contains(out.String(), "never sees a refresh") {
+		t.Fatalf("help = %q, %v", out.String(), err)
 	}
 }
 

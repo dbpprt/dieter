@@ -106,8 +106,10 @@ type ProviderAccountServiceClient interface {
 	RefreshProviderUsage(context.Context, *v1.RefreshProviderUsageRequest) (*v1.ProviderAccount, error)
 	// Spends one ChatGPT rate-limit reset credit of an account signed in here.
 	ConsumeProviderUsageReset(context.Context, *v1.ConsumeProviderUsageResetRequest) (*v1.ConsumeProviderUsageResetResponse, error)
-	// Returns the current access token of the calling turn's own Sign in with
-	// ChatGPT account. Local route only, and only with a live turn token.
+	// Returns the current access token of one of the calling turn's own
+	// accounts: its Sign in with ChatGPT account, or, for Oh My Pi turns, the
+	// account the turn uses for the requested provider. Local route only, and
+	// only with a live turn token.
 	GetProviderTurnToken(context.Context, *v1.GetProviderTurnTokenRequest) (*v1.ProviderTurnToken, error)
 }
 
@@ -378,8 +380,10 @@ type ProviderAccountServiceHandler interface {
 	RefreshProviderUsage(context.Context, *v1.RefreshProviderUsageRequest) (*v1.ProviderAccount, error)
 	// Spends one ChatGPT rate-limit reset credit of an account signed in here.
 	ConsumeProviderUsageReset(context.Context, *v1.ConsumeProviderUsageResetRequest) (*v1.ConsumeProviderUsageResetResponse, error)
-	// Returns the current access token of the calling turn's own Sign in with
-	// ChatGPT account. Local route only, and only with a live turn token.
+	// Returns the current access token of one of the calling turn's own
+	// accounts: its Sign in with ChatGPT account, or, for Oh My Pi turns, the
+	// account the turn uses for the requested provider. Local route only, and
+	// only with a live turn token.
 	GetProviderTurnToken(context.Context, *v1.GetProviderTurnTokenRequest) (*v1.ProviderTurnToken, error)
 }
 

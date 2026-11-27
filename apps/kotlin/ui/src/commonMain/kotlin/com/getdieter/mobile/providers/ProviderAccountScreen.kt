@@ -39,6 +39,7 @@ internal fun ProviderAccountScreen(
     var renaming by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf(false) }
     var resetting by remember { mutableStateOf(false) }
+    var allowingOmp by remember { mutableStateOf(false) }
     var signingOut by remember { mutableStateOf<ProviderMachineRow?>(null) }
     Screen(
         ScreenChrome(
@@ -133,6 +134,7 @@ internal fun ProviderAccountScreen(
                 val rows = buildList {
                     add("default")
                     add("included")
+                    if (account.offers_omp_access) add("omp")
                     if (account.can_reset) add("reset")
                     if (account.manage_usage_url.isNotEmpty()) add("manage")
                 }
@@ -162,6 +164,24 @@ internal fun ProviderAccountScreen(
                                     DSwitch(
                                         account.included,
                                         { store.providers.setIncluded(accountId, it) },
+                                        enabled = !mutating,
+                                    )
+                                },
+                            )
+                        "omp" ->
+                            ListRow(
+                                ProviderExports.ompAccessLabel(),
+                                Modifier.testTag("provider-omp-access"),
+                                position = position,
+                                subtitle = ProviderExports.ompAccessDetail(),
+                                titleMaxLines = 2,
+                                trailing = {
+                                    DSwitch(
+                                        account.omp_access,
+                                        {
+                                            if (it) allowingOmp = true
+                                            else store.providers.setOmpAccess(accountId, false)
+                                        },
                                         enabled = !mutating,
                                     )
                                 },
@@ -251,6 +271,17 @@ internal fun ProviderAccountScreen(
                     store.providers.consumeReset(accountId)
                 },
                 { resetting = false },
+            )
+        if (allowingOmp)
+            ConfirmDialog(
+                ProviderExports.ompAccessTitle(),
+                ProviderExports.ompAccessMessage(),
+                ProviderExports.ompAccessConfirm(),
+                {
+                    allowingOmp = false
+                    store.providers.setOmpAccess(accountId, true)
+                },
+                { allowingOmp = false },
             )
         signingOut?.let { machine ->
             ConfirmDialog(

@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
@@ -76,8 +75,8 @@ func TestTurnSelectionDefaultsAndUnsupportedChanges(t *testing.T) {
 		t.Fatal("accepted unsupported effort")
 	}
 	omp := model.Card{Provider: "omp", Model: "openai-codex/gpt-6-sol", Effort: "high", InitialPromptSentAt: "sent"}
-	if _, _, _, err := resolveTurnSelection(harness.StaticCatalog(false), omp, model.HarnessSelection{Effort: "low"}); err == nil || !strings.Contains(err.Error(), "effort is locked") {
-		t.Fatalf("OMP effort change=%v", err)
+	if _, _, selection, err := resolveTurnSelection(harness.StaticCatalog(false), omp, model.HarnessSelection{Effort: "low"}); err != nil || selection.Effort != "low" {
+		t.Fatalf("OMP effort change=%#v err=%v", selection, err)
 	}
 	if _, _, _, err := resolveTurnSelection(harness.StaticCatalog(false), omp, model.HarnessSelection{Model: "openai-codex/gpt-6-sol"}); err != nil {
 		t.Fatalf("OMP model change=%v", err)

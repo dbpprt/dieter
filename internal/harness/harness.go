@@ -138,6 +138,9 @@ type Request struct {
 	// ProviderAccountID is the provider account the turn runs on, for the
 	// engine's bookkeeping (usage, expired logins); it never reaches the worker.
 	ProviderAccountID string `json:"-"`
+	// DieterExecutable is the dieter binary Oh My Pi's token helper runs; empty
+	// uses the running executable.
+	DieterExecutable string `json:"-"`
 	// Auth is the adapter's credential object for a provider-account turn:
 	// {} lets Claude Code use its own login, Codex gets its token here. Nil
 	// (sent as null) leaves the adapter to its own discovery, for harnesses
@@ -363,12 +366,16 @@ func (r *SubprocessRunner) Run(ctx context.Context, request Request, emit func(O
 			return fmt.Errorf("prepare Strix: %w", err)
 		}
 	}
+	var ompAgentDir string
 	if request.Adapter == "omp-acp" {
 		bunBin, bunErr := ensureManagedBun(ctx, r.home(), r.env.runtimeArchive())
 		if bunErr != nil {
 			return fmt.Errorf("prepare OMP runtime: %w", bunErr)
 		}
 		runtimePaths = append(runtimePaths, bunBin)
+		if ompAgentDir, err = ensureManagedOMPHome(r.home(), request.DieterExecutable, r.env.OMPProviderBaseURLs); err != nil {
+			return fmt.Errorf("prepare OMP home: %w", err)
+		}
 	}
 	workerToken := newWorkerToken()
 	command := exec.CommandContext(ctx, "node", filepath.Join(dir, "runner.mjs"), "--board-worker-token="+workerToken)
@@ -383,7 +390,7 @@ func (r *SubprocessRunner) Run(ctx context.Context, request Request, emit func(O
 	command.Dir = dir
 	switch request.Adapter {
 	case "omp-acp":
-		command.Env = r.env.ompHarnessEnvironment(runtimePaths...)
+		command.Env = r.env.ompHarnessEnvironment(ompAgentDir, runtimePaths...)
 	case "strix":
 		command.Env = r.env.strixHarnessEnvironment(strixExecutable)
 	default:

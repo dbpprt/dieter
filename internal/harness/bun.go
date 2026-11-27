@@ -17,8 +17,19 @@ import (
 
 const managedBunVersion = "1.4.5"
 
-func (e Environment) ompHarnessEnvironment(runtimePaths ...string) []string {
-	environment := e.harnessEnvironment(runtimePaths...)
+// ompHarnessEnvironment is an OMP worker's environment: the harness allowlist
+// without host credentials or profile selection, plus the managed agent
+// directory (ADR 0007).
+func (e Environment) ompHarnessEnvironment(agentDir string, runtimePaths ...string) []string {
+	inherited := e.harnessEnvironment(runtimePaths...)
+	environment := make([]string, 0, len(inherited)+2)
+	for _, item := range inherited {
+		name, _, _ := strings.Cut(item, "=")
+		if !ompMasked(name) {
+			environment = append(environment, item)
+		}
+	}
+	environment = append(environment, "PI_CODING_AGENT_DIR="+agentDir)
 	if runtime.GOARCH != "amd64" {
 		return environment
 	}

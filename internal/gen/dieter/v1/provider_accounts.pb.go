@@ -890,9 +890,12 @@ type ProviderAccount struct {
 	// The freshest usage of any machine.
 	Usage *ProviderUsage `protobuf:"bytes,9,opt,name=usage,proto3" json:"usage,omitempty"`
 	// Summed over machines.
-	DieterTokens  *ProviderTokenUsage `protobuf:"bytes,10,opt,name=dieter_tokens,json=dieterTokens,proto3" json:"dieter_tokens,omitempty"`
-	CreatedAt     string              `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	CreatedBy     string              `protobuf:"bytes,12,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
+	DieterTokens *ProviderTokenUsage `protobuf:"bytes,10,opt,name=dieter_tokens,json=dieterTokens,proto3" json:"dieter_tokens,omitempty"`
+	CreatedAt    string              `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	CreatedBy    string              `protobuf:"bytes,12,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
+	// Claude only: Oh My Pi turns may use this login. Off by default; Anthropic
+	// does not permit Claude.ai logins in third-party harnesses.
+	OmpAccess     bool `protobuf:"varint,13,opt,name=omp_access,json=ompAccess,proto3" json:"omp_access,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1009,6 +1012,13 @@ func (x *ProviderAccount) GetCreatedBy() string {
 		return x.CreatedBy
 	}
 	return ""
+}
+
+func (x *ProviderAccount) GetOmpAccess() bool {
+	if x != nil {
+		return x.OmpAccess
+	}
+	return false
 }
 
 type ListProviderAccountsRequest struct {
@@ -1174,8 +1184,10 @@ type UpdateProviderAccountRequest struct {
 	AccountId        string                 `protobuf:"bytes,1,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
 	Label            *string                `protobuf:"bytes,2,opt,name=label,proto3,oneof" json:"label,omitempty"`
 	IncludeInSummary *bool                  `protobuf:"varint,3,opt,name=include_in_summary,json=includeInSummary,proto3,oneof" json:"include_in_summary,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Claude accounts only.
+	OmpAccess     *bool `protobuf:"varint,4,opt,name=omp_access,json=ompAccess,proto3,oneof" json:"omp_access,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *UpdateProviderAccountRequest) Reset() {
@@ -1225,6 +1237,13 @@ func (x *UpdateProviderAccountRequest) GetLabel() string {
 func (x *UpdateProviderAccountRequest) GetIncludeInSummary() bool {
 	if x != nil && x.IncludeInSummary != nil {
 		return *x.IncludeInSummary
+	}
+	return false
+}
+
+func (x *UpdateProviderAccountRequest) GetOmpAccess() bool {
+	if x != nil && x.OmpAccess != nil {
+		return *x.OmpAccess
 	}
 	return false
 }
@@ -2005,7 +2024,10 @@ func (x *ConsumeProviderUsageResetResponse) GetAccount() *ProviderAccount {
 }
 
 type GetProviderTurnTokenRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Unspecified: the turn's Sign in with ChatGPT account. Claude or ChatGPT:
+	// the account an Oh My Pi turn uses for that provider.
+	Provider      ProviderKind `protobuf:"varint,1,opt,name=provider,proto3,enum=dieter.v1.ProviderKind" json:"provider,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2038,6 +2060,13 @@ func (x *GetProviderTurnTokenRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use GetProviderTurnTokenRequest.ProtoReflect.Descriptor instead.
 func (*GetProviderTurnTokenRequest) Descriptor() ([]byte, []int) {
 	return file_dieter_v1_provider_accounts_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *GetProviderTurnTokenRequest) GetProvider() ProviderKind {
+	if x != nil {
+		return x.Provider
+	}
+	return ProviderKind_PROVIDER_KIND_UNSPECIFIED
 }
 
 type ProviderTurnToken struct {
@@ -2146,7 +2175,7 @@ const file_dieter_v1_provider_accounts_proto_rawDesc = "" +
 	"error_code\x18\x06 \x01(\tR\terrorCode\x12#\n" +
 	"\rerror_message\x18\a \x01(\tR\ferrorMessage\x12.\n" +
 	"\x05usage\x18\b \x01(\v2\x18.dieter.v1.ProviderUsageR\x05usage\x12B\n" +
-	"\rdieter_tokens\x18\t \x01(\v2\x1d.dieter.v1.ProviderTokenUsageR\fdieterTokens\"\x95\x04\n" +
+	"\rdieter_tokens\x18\t \x01(\v2\x1d.dieter.v1.ProviderTokenUsageR\fdieterTokens\"\xb4\x04\n" +
 	"\x0fProviderAccount\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x123\n" +
 	"\bprovider\x18\x02 \x01(\x0e2\x17.dieter.v1.ProviderKindR\bprovider\x12\x14\n" +
@@ -2163,7 +2192,9 @@ const file_dieter_v1_provider_accounts_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\v \x01(\tR\tcreatedAt\x12\x1d\n" +
 	"\n" +
-	"created_by\x18\f \x01(\tR\tcreatedBy\"R\n" +
+	"created_by\x18\f \x01(\tR\tcreatedBy\x12\x1d\n" +
+	"\n" +
+	"omp_access\x18\r \x01(\bR\tompAccess\"R\n" +
 	"\x1bListProviderAccountsRequest\x123\n" +
 	"\bprovider\x18\x01 \x01(\x0e2\x17.dieter.v1.ProviderKindR\bprovider\"V\n" +
 	"\x1cListProviderAccountsResponse\x126\n" +
@@ -2173,14 +2204,17 @@ const file_dieter_v1_provider_accounts_proto_rawDesc = "" +
 	"\x05label\x18\x02 \x01(\tR\x05label\x126\n" +
 	"\x06method\x18\x03 \x01(\x0e2\x1e.dieter.v1.ProviderLoginMethodR\x06method\x12\x1d\n" +
 	"\n" +
-	"account_id\x18\x04 \x01(\tR\taccountId\"\xac\x01\n" +
+	"account_id\x18\x04 \x01(\tR\taccountId\"\xdf\x01\n" +
 	"\x1cUpdateProviderAccountRequest\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x01 \x01(\tR\taccountId\x12\x19\n" +
 	"\x05label\x18\x02 \x01(\tH\x00R\x05label\x88\x01\x01\x121\n" +
-	"\x12include_in_summary\x18\x03 \x01(\bH\x01R\x10includeInSummary\x88\x01\x01B\b\n" +
+	"\x12include_in_summary\x18\x03 \x01(\bH\x01R\x10includeInSummary\x88\x01\x01\x12\"\n" +
+	"\n" +
+	"omp_access\x18\x04 \x01(\bH\x02R\tompAccess\x88\x01\x01B\b\n" +
 	"\x06_labelB\x15\n" +
-	"\x13_include_in_summary\"=\n" +
+	"\x13_include_in_summaryB\r\n" +
+	"\v_omp_access\"=\n" +
 	"\x1cDeleteProviderAccountRequest\x12\x1d\n" +
 	"\n" +
 	"account_id\x18\x01 \x01(\tR\taccountId\"A\n" +
@@ -2240,8 +2274,9 @@ const file_dieter_v1_provider_accounts_proto_rawDesc = "" +
 	"\tcredit_id\x18\x03 \x01(\tR\bcreditId\"s\n" +
 	"!ConsumeProviderUsageResetResponse\x12\x18\n" +
 	"\aoutcome\x18\x01 \x01(\tR\aoutcome\x124\n" +
-	"\aaccount\x18\x02 \x01(\v2\x1a.dieter.v1.ProviderAccountR\aaccount\"\x1d\n" +
-	"\x1bGetProviderTurnTokenRequest\"H\n" +
+	"\aaccount\x18\x02 \x01(\v2\x1a.dieter.v1.ProviderAccountR\aaccount\"R\n" +
+	"\x1bGetProviderTurnTokenRequest\x123\n" +
+	"\bprovider\x18\x01 \x01(\x0e2\x17.dieter.v1.ProviderKindR\bprovider\"H\n" +
 	"\x11ProviderTurnToken\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12\x1d\n" +
 	"\n" +
@@ -2374,39 +2409,40 @@ var file_dieter_v1_provider_accounts_proto_depIdxs = []int32{
 	6,  // 22: dieter.v1.ProviderLogin.identity:type_name -> dieter.v1.ProviderIdentity
 	3,  // 23: dieter.v1.StartProviderLoginRequest.flow:type_name -> dieter.v1.ProviderLoginFlow
 	12, // 24: dieter.v1.ConsumeProviderUsageResetResponse.account:type_name -> dieter.v1.ProviderAccount
-	13, // 25: dieter.v1.ProviderAccountService.ListProviderAccounts:input_type -> dieter.v1.ListProviderAccountsRequest
-	15, // 26: dieter.v1.ProviderAccountService.CreateProviderAccount:input_type -> dieter.v1.CreateProviderAccountRequest
-	16, // 27: dieter.v1.ProviderAccountService.UpdateProviderAccount:input_type -> dieter.v1.UpdateProviderAccountRequest
-	17, // 28: dieter.v1.ProviderAccountService.DeleteProviderAccount:input_type -> dieter.v1.DeleteProviderAccountRequest
-	18, // 29: dieter.v1.ProviderAccountService.SetDefaultProviderAccount:input_type -> dieter.v1.SetDefaultProviderAccountRequest
-	21, // 30: dieter.v1.ProviderAccountService.StartProviderLogin:input_type -> dieter.v1.StartProviderLoginRequest
-	22, // 31: dieter.v1.ProviderAccountService.WatchProviderLogin:input_type -> dieter.v1.WatchProviderLoginRequest
-	23, // 32: dieter.v1.ProviderAccountService.SubmitProviderLoginInput:input_type -> dieter.v1.SubmitProviderLoginInputRequest
-	24, // 33: dieter.v1.ProviderAccountService.CancelProviderLogin:input_type -> dieter.v1.CancelProviderLoginRequest
-	25, // 34: dieter.v1.ProviderAccountService.SignOutProviderAccount:input_type -> dieter.v1.SignOutProviderAccountRequest
-	26, // 35: dieter.v1.ProviderAccountService.CheckProviderLogin:input_type -> dieter.v1.CheckProviderLoginRequest
-	27, // 36: dieter.v1.ProviderAccountService.RefreshProviderUsage:input_type -> dieter.v1.RefreshProviderUsageRequest
-	28, // 37: dieter.v1.ProviderAccountService.ConsumeProviderUsageReset:input_type -> dieter.v1.ConsumeProviderUsageResetRequest
-	30, // 38: dieter.v1.ProviderAccountService.GetProviderTurnToken:input_type -> dieter.v1.GetProviderTurnTokenRequest
-	14, // 39: dieter.v1.ProviderAccountService.ListProviderAccounts:output_type -> dieter.v1.ListProviderAccountsResponse
-	12, // 40: dieter.v1.ProviderAccountService.CreateProviderAccount:output_type -> dieter.v1.ProviderAccount
-	12, // 41: dieter.v1.ProviderAccountService.UpdateProviderAccount:output_type -> dieter.v1.ProviderAccount
-	32, // 42: dieter.v1.ProviderAccountService.DeleteProviderAccount:output_type -> google.protobuf.Empty
-	12, // 43: dieter.v1.ProviderAccountService.SetDefaultProviderAccount:output_type -> dieter.v1.ProviderAccount
-	20, // 44: dieter.v1.ProviderAccountService.StartProviderLogin:output_type -> dieter.v1.ProviderLogin
-	20, // 45: dieter.v1.ProviderAccountService.WatchProviderLogin:output_type -> dieter.v1.ProviderLogin
-	20, // 46: dieter.v1.ProviderAccountService.SubmitProviderLoginInput:output_type -> dieter.v1.ProviderLogin
-	20, // 47: dieter.v1.ProviderAccountService.CancelProviderLogin:output_type -> dieter.v1.ProviderLogin
-	12, // 48: dieter.v1.ProviderAccountService.SignOutProviderAccount:output_type -> dieter.v1.ProviderAccount
-	12, // 49: dieter.v1.ProviderAccountService.CheckProviderLogin:output_type -> dieter.v1.ProviderAccount
-	12, // 50: dieter.v1.ProviderAccountService.RefreshProviderUsage:output_type -> dieter.v1.ProviderAccount
-	29, // 51: dieter.v1.ProviderAccountService.ConsumeProviderUsageReset:output_type -> dieter.v1.ConsumeProviderUsageResetResponse
-	31, // 52: dieter.v1.ProviderAccountService.GetProviderTurnToken:output_type -> dieter.v1.ProviderTurnToken
-	39, // [39:53] is the sub-list for method output_type
-	25, // [25:39] is the sub-list for method input_type
-	25, // [25:25] is the sub-list for extension type_name
-	25, // [25:25] is the sub-list for extension extendee
-	0,  // [0:25] is the sub-list for field type_name
+	0,  // 25: dieter.v1.GetProviderTurnTokenRequest.provider:type_name -> dieter.v1.ProviderKind
+	13, // 26: dieter.v1.ProviderAccountService.ListProviderAccounts:input_type -> dieter.v1.ListProviderAccountsRequest
+	15, // 27: dieter.v1.ProviderAccountService.CreateProviderAccount:input_type -> dieter.v1.CreateProviderAccountRequest
+	16, // 28: dieter.v1.ProviderAccountService.UpdateProviderAccount:input_type -> dieter.v1.UpdateProviderAccountRequest
+	17, // 29: dieter.v1.ProviderAccountService.DeleteProviderAccount:input_type -> dieter.v1.DeleteProviderAccountRequest
+	18, // 30: dieter.v1.ProviderAccountService.SetDefaultProviderAccount:input_type -> dieter.v1.SetDefaultProviderAccountRequest
+	21, // 31: dieter.v1.ProviderAccountService.StartProviderLogin:input_type -> dieter.v1.StartProviderLoginRequest
+	22, // 32: dieter.v1.ProviderAccountService.WatchProviderLogin:input_type -> dieter.v1.WatchProviderLoginRequest
+	23, // 33: dieter.v1.ProviderAccountService.SubmitProviderLoginInput:input_type -> dieter.v1.SubmitProviderLoginInputRequest
+	24, // 34: dieter.v1.ProviderAccountService.CancelProviderLogin:input_type -> dieter.v1.CancelProviderLoginRequest
+	25, // 35: dieter.v1.ProviderAccountService.SignOutProviderAccount:input_type -> dieter.v1.SignOutProviderAccountRequest
+	26, // 36: dieter.v1.ProviderAccountService.CheckProviderLogin:input_type -> dieter.v1.CheckProviderLoginRequest
+	27, // 37: dieter.v1.ProviderAccountService.RefreshProviderUsage:input_type -> dieter.v1.RefreshProviderUsageRequest
+	28, // 38: dieter.v1.ProviderAccountService.ConsumeProviderUsageReset:input_type -> dieter.v1.ConsumeProviderUsageResetRequest
+	30, // 39: dieter.v1.ProviderAccountService.GetProviderTurnToken:input_type -> dieter.v1.GetProviderTurnTokenRequest
+	14, // 40: dieter.v1.ProviderAccountService.ListProviderAccounts:output_type -> dieter.v1.ListProviderAccountsResponse
+	12, // 41: dieter.v1.ProviderAccountService.CreateProviderAccount:output_type -> dieter.v1.ProviderAccount
+	12, // 42: dieter.v1.ProviderAccountService.UpdateProviderAccount:output_type -> dieter.v1.ProviderAccount
+	32, // 43: dieter.v1.ProviderAccountService.DeleteProviderAccount:output_type -> google.protobuf.Empty
+	12, // 44: dieter.v1.ProviderAccountService.SetDefaultProviderAccount:output_type -> dieter.v1.ProviderAccount
+	20, // 45: dieter.v1.ProviderAccountService.StartProviderLogin:output_type -> dieter.v1.ProviderLogin
+	20, // 46: dieter.v1.ProviderAccountService.WatchProviderLogin:output_type -> dieter.v1.ProviderLogin
+	20, // 47: dieter.v1.ProviderAccountService.SubmitProviderLoginInput:output_type -> dieter.v1.ProviderLogin
+	20, // 48: dieter.v1.ProviderAccountService.CancelProviderLogin:output_type -> dieter.v1.ProviderLogin
+	12, // 49: dieter.v1.ProviderAccountService.SignOutProviderAccount:output_type -> dieter.v1.ProviderAccount
+	12, // 50: dieter.v1.ProviderAccountService.CheckProviderLogin:output_type -> dieter.v1.ProviderAccount
+	12, // 51: dieter.v1.ProviderAccountService.RefreshProviderUsage:output_type -> dieter.v1.ProviderAccount
+	29, // 52: dieter.v1.ProviderAccountService.ConsumeProviderUsageReset:output_type -> dieter.v1.ConsumeProviderUsageResetResponse
+	31, // 53: dieter.v1.ProviderAccountService.GetProviderTurnToken:output_type -> dieter.v1.ProviderTurnToken
+	40, // [40:54] is the sub-list for method output_type
+	26, // [26:40] is the sub-list for method input_type
+	26, // [26:26] is the sub-list for extension type_name
+	26, // [26:26] is the sub-list for extension extendee
+	0,  // [0:26] is the sub-list for field type_name
 }
 
 func init() { file_dieter_v1_provider_accounts_proto_init() }

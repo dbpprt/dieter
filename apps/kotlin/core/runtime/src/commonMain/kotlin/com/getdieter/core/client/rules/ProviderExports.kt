@@ -1,6 +1,7 @@
 package com.getdieter.core.client.rules
 
 import com.getdieter.client.v1.ProviderSeverity
+import com.getdieter.core.providers.OmpAccounts
 import com.getdieter.core.providers.ProviderReadiness
 import com.getdieter.core.providers.ProviderUsages
 import com.getdieter.core.runtime.Timestamps
@@ -66,4 +67,22 @@ object ProviderExports {
     fun resetTitle(): String = ProviderUsages.RESET_TITLE
 
     fun resetMessage(): String = ProviderUsages.RESET_MESSAGE
+
+    /**
+     * The switch a Claude account row offers (`offers_omp_access`): "Allow Oh My Pi to use this
+     * login", with [ompAccessDetail] under it.
+     */
+    fun ompAccessLabel(): String = OmpAccounts.ACCESS_LABEL
+
+    fun ompAccessDetail(): String = OmpAccounts.ACCESS_DETAIL
+
+    /**
+     * The confirmation before the switch turns on, with [ompAccessConfirm] as its button; turning
+     * it off needs none.
+     */
+    fun ompAccessTitle(): String = OmpAccounts.ACCESS_TITLE
+
+    fun ompAccessMessage(): String = OmpAccounts.ACCESS_MESSAGE
+
+    fun ompAccessConfirm(): String = OmpAccounts.ACCESS_CONFIRM
 }

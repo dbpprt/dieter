@@ -1,0 +1,9 @@
+exit 0; helper calls: anthropic=2 codex=2
+   /v1/messages claude-sonnet-5-5 token=anthropic.token.1
+   /v1/messages claude-sonnet-5-5 token=anthropic.token.2
+   /backend-api/codex/responses gpt-6-sol token=codex.token.1
+   /backend-api/codex/responses gpt-6-sol token=codex.token.2
+   /v1/messages claude-sonnet-5-5 token=anthropic.token.2
+   /v1/messages claude-sonnet-5-5 token=anthropic.token.2
+   /v1/messages claude-sonnet-5-5 token=anthropic.token.2
+   acp: status=ok stop=end_turn reply="ANTHROPIC-MAIN-OK"

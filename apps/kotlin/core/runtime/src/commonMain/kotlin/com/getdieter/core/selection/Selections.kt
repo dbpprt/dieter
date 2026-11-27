@@ -7,6 +7,7 @@ import com.getdieter.api.v1.HarnessSelection
 import com.getdieter.api.v1.ProviderOption
 import com.getdieter.api.v1.ProviderOptionChoice
 import com.getdieter.core.board.Runtimes
+import com.getdieter.core.providers.OmpAccounts
 
 /** How a provider option is edited: switched on or off, picked from its choices, or typed. */
 enum class ProviderOptionKind {
@@ -350,12 +351,24 @@ object Selections {
             chosen.provider == current.provider &&
                 chosen.model == current.model &&
                 plainEffort(chosen.effort) == plainEffort(current.effort) &&
-                chosen.provider_options == current.provider_options &&
+                sameOptions(chosen, current.provider_options) &&
                 (chosen.account_id.isEmpty() || chosen.account_id == card.provider_account_id)
         return draft.takeIf { !same }
     }
 
     private fun plainEffort(effort: String): String = if (effort == DEFAULT_EFFORT) "" else effort
+
+    /**
+     * [chosen]'s options are the card's [current] ones. The daemon records the account Oh My Pi's
+     * advisor resolved to, so choosing none (its provider's default) matches whichever it recorded.
+     */
+    private fun sameOptions(chosen: HarnessSelection, current: Map<String, String>): Boolean {
+        val options = chosen.provider_options
+        val advisor = OmpAccounts.ADVISOR_ACCOUNT
+        if (chosen.provider == OmpAccounts.HARNESS && options[advisor].isNullOrEmpty())
+            return options - advisor == current - advisor
+        return options == current
+    }
 
     fun supports(harnesses: List<Harness>, selection: HarnessSelection): Boolean =
         harness(harnesses, selection.provider)?.let { model(it, selection.model) != null } == true

@@ -99,8 +99,9 @@ so the CLI never links the daemon's storage or engine.
   version and platform package instead of running npm; only DSH still installs
   from npm. An active turn keeps its runtime digest across restarts.
 - **Provider accounts.** `internal/engine/accounts` holds the Claude and
-  ChatGPT accounts that Claude Code and Codex turns run on
-  ([ADR 0006](adr/0006-provider-accounts.md)). Accounts, the default per
+  ChatGPT accounts that Claude Code, Codex and Oh My Pi turns run on
+  ([ADR 0006](adr/0006-provider-accounts.md),
+  [ADR 0007](adr/0007-oh-my-pi-managed-accounts.md)). Accounts, the default per
   provider, and each machine's login state with its usage are KV records
   (`provider-accounts`, `provider-account-defaults`, `provider-logins`) that
   replicate like other peer records; clients read them from their replica.
@@ -117,7 +118,21 @@ so the CLI never links the daemon's storage or engine.
   Code refreshes its own login, or the account's Codex access token from the
   broker. Every Dieter Codex process uses `DIETER_HOME/codex`, whose
   `config.toml` the daemon renders from `~/.codex/config.toml` plus its own
-  provider block. Each daemon probes the usage of its own logins through the
+  provider block. An Oh My Pi turn resolves two accounts: the implementation
+  model's (its provider follows from the `anthropic/` or `openai-codex/`
+  prefix) and, for an advisor on the other provider, the `advisor_account`
+  option; a Claude account needs its Oh My Pi access flag. Admission makes
+  both access tokens fresh. Every Dieter OMP process uses the managed agent
+  directory `DIETER_HOME/omp/agent`, which holds no login; its rendered
+  `models.yml` makes OMP run `dieter provider token --turn --provider P`, and
+  `GetProviderTurnToken` returns the turn's account token for that provider:
+  a Codex token from the broker, or a Claude access token read from Claude
+  Code's store after Claude Code refreshed it through the usage probe. OMP
+  launches with fixed arguments and a per-conversation settings overlay that
+  pins every chat role and sets the advisor; the model arrives through the ACP
+  `model` option and the thinking level through Dieter's OMP hook, so a
+  conversation can change them, the advisor or the account and still resume.
+  Each daemon probes the usage of its own logins through the
   tools (Claude Code's SDK usage call, Codex `account/rateLimits/read`), adds
   the limits reported during turns and its token ledger
   (`DIETER_HOME/provider-accounts/ledger.ndjson`), and writes them into its
@@ -178,10 +193,12 @@ internal/
   engine/                turn engine: admission, leases, harness turns, queues
   engine/accounts/       provider accounts: KV registry, sign-in sessions, per-account
                          Claude config dirs and DIETER_HOME/codex, Codex token broker,
-                         usage probes and token ledger, adoption, status checks, cleanup
+                         Oh My Pi turn tokens (omp.go), usage probes and token ledger,
+                         adoption, status checks, cleanup
   engine/scheduler/      schedules and occurrence history
-  harness/               harness adapters, discovery, runner; catalog/ (embedded
-                         harnesses.yaml); runtime/ (Node bridge, pinned with package-lock)
+  harness/               harness adapters, discovery, runner, the managed Oh My Pi agent
+                         dir (omp_home.go); catalog/ (embedded harnesses.yaml); runtime/
+                         (Node bridge, pinned with package-lock)
   harness/agentexec/     the pinned claude and codex executables inside the harness runtime
   harness/codexrpc/      JSON-lines client for codex app-server (login, account, rate limits)
   store/                 central storage: a composition root (Store, New, Ensure, Recover,

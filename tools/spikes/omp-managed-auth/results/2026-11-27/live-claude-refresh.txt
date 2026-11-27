@@ -1,0 +1,8 @@
+main=anthropic/claude-haiku-5-5 advisor=off exit=0
+acp: status=ok stop=end_turn reply="OK" kinds=["available_commands_update","session_info_update","agent_message_chunk","usage_update"]
+usage updates: 1
+helper:
+  {"at":"2026-11-27T01:33:05.495Z","provider":"claude","action":"refresh-requested","sha256":"fc61126eb59d","minutesLeft":-1}
+  {"at":"2026-11-27T01:33:06.690Z","provider":"claude","action":"refreshed","sha256":"c8bb4728ed59","minutesLeft":480}
+  {"at":"2026-11-27T01:33:06.692Z","provider":"claude","action":"served","sha256":"c8bb4728ed59","minutesLeft":480}
+  {"at":"2026-11-27T01:33:06.842Z","provider":"codex","action":"refresh-requested","sha256":"e053b4c7aa66","minutesLeft":-14158}

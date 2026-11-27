@@ -1,11 +1,9 @@
 import { acpSettings } from "./acp-runtime.mjs";
 import { createHash, randomUUID } from "node:crypto";
-import { chmod, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 
 const acpImplementationMismatch = "ACP lifecycle state is incompatible with the configured agent.";
-const stagedRuntimeDirectory = /^[a-f0-9]{16}$/;
-const stableHookFile = /^omp-capabilities-[a-f0-9]{64}\.mjs$/;
 
 function sortIdentityValue(value) {
   if (Array.isArray(value)) return value.map(sortIdentityValue);
@@ -109,103 +107,37 @@ async function atomicWrite(path, content) {
   }
 }
 
-async function regularFile(path) {
+async function stagePrivate(path, content) {
+  let current;
   try {
-    return (await stat(path)).isFile();
+    current = await readFile(path);
   } catch (error) {
-    if (error?.code === "ENOENT") return false;
-    throw error;
+    if (error?.code !== "ENOENT") throw error;
   }
-}
-
-async function validStableHook(path, name) {
-  try {
-    const content = await readFile(path);
-    return (
-      createHash("sha256").update(content).digest("hex") ===
-      name.slice("omp-capabilities-".length, -".mjs".length)
-    );
-  } catch (error) {
-    if (error?.code === "ENOENT") return false;
-    throw error;
-  }
+  if (!current?.equals(Buffer.from(content))) await atomicWrite(path, content);
+  await chmod(path, 0o600);
 }
 
 /**
- * Give OMP a hook path whose identity depends on the hook itself, not on the
- * shared harness package-lock. Older staged paths remain candidates so
- * lifecycle state written before this scheme can still attach to its bridge.
+ * Stage everything an OMP launch reads at fixed per-conversation paths: the
+ * capabilities hook, the settings overlay (runtime settings, pinned roles,
+ * advisor) and the turn file the hook reads the thinking level from. The
+ * launch arguments, and with them the ACP implementation identity, therefore
+ * never change between turns or runtime updates, so a conversation can change
+ * model, effort, advisor or account and still resume its OMP session.
  */
-export async function prepareOMPConfig({ runtimeRoot, content }) {
-  const configRoot = join(runtimeRoot, "harness-config");
-  const configPath = join(configRoot, "omp.yml");
-  await mkdir(configRoot, { recursive: true, mode: 0o700 });
-  await chmod(configRoot, 0o700);
-  let current;
-  try {
-    current = await readFile(configPath, "utf8");
-  } catch (error) {
-    if (error?.code !== "ENOENT") throw error;
+export async function prepareOMPLaunch({ runtimeRoot, sessionId, hookSource, config, turn }) {
+  if (typeof sessionId !== "string" || !/^[A-Za-z0-9_-]+$/.test(sessionId)) {
+    throw new Error("OMP launch needs a plain session ID");
   }
-  if (current !== content) await atomicWrite(configPath, content);
-  await chmod(configPath, 0o600);
-  return configPath;
-}
-
-export async function prepareOMPHookPaths({ runtimeRoot, currentHookPath }) {
-  const content = await readFile(currentHookPath);
-  const digest = createHash("sha256").update(content).digest("hex");
-  const stableRoot = join(runtimeRoot, "harness-hooks");
-  const stableHookPath = join(stableRoot, `omp-capabilities-${digest}.mjs`);
-  await mkdir(stableRoot, { recursive: true, mode: 0o700 });
-  await chmod(stableRoot, 0o700);
-
-  let stagedContent;
-  try {
-    stagedContent = await readFile(stableHookPath);
-  } catch (error) {
-    if (error?.code !== "ENOENT") throw error;
-  }
-  if (!stagedContent?.equals(content)) await atomicWrite(stableHookPath, content);
-  await chmod(stableHookPath, 0o600);
-
-  const hookPaths = [stableHookPath];
-  for (const entry of await readdir(stableRoot, { withFileTypes: true })) {
-    if (!entry.isFile() || !stableHookFile.test(entry.name)) continue;
-    const candidate = join(stableRoot, entry.name);
-    if (!hookPaths.includes(candidate) && (await validStableHook(candidate, entry.name)))
-      hookPaths.push(candidate);
-  }
-  hookPaths.push(currentHookPath);
-  const currentRuntimeRoot = dirname(currentHookPath);
-  const sharedHarnessRoot = dirname(currentRuntimeRoot);
-  for (const entry of await readdir(sharedHarnessRoot, { withFileTypes: true })) {
-    if (!entry.isDirectory() || !stagedRuntimeDirectory.test(entry.name)) continue;
-    const candidate = join(sharedHarnessRoot, entry.name, "omp-capabilities-hook.mjs");
-    if (!hookPaths.includes(candidate) && (await regularFile(candidate))) hookPaths.push(candidate);
-  }
-  return hookPaths;
-}
-
-/** Retry only ACP implementation compatibility failures, newest launch first. */
-export async function createOMPSessionWithCompatibility({
-  candidates,
-  createAgent,
-  sessionOptions,
-  onFallback,
-}) {
-  if (!Array.isArray(candidates) || candidates.length === 0)
-    throw new Error("OMP launch candidates are missing");
-  for (let index = 0; index < candidates.length; index += 1) {
-    const candidate = candidates[index];
-    const agent = createAgent(candidate);
-    try {
-      const session = await agent.createSession(sessionOptions);
-      if (index > 0) onFallback?.(candidate);
-      return { agent, session, candidate };
-    } catch (error) {
-      if (!isACPImplementationMismatch(error) || index === candidates.length - 1) throw error;
-    }
-  }
-  throw new Error("OMP hook compatibility search exhausted unexpectedly");
+  const root = join(runtimeRoot, "harness-config");
+  await mkdir(root, { recursive: true, mode: 0o700 });
+  await chmod(root, 0o700);
+  const hookPath = join(root, "omp-capabilities.mjs");
+  const configPath = join(root, `omp-${sessionId}.yml`);
+  const turnPath = join(root, `omp-${sessionId}.json`);
+  await stagePrivate(hookPath, await readFile(hookSource));
+  await stagePrivate(configPath, config);
+  await stagePrivate(turnPath, `${JSON.stringify(turn)}\n`);
+  return { hookPath, configPath, turnPath };
 }

@@ -97,7 +97,7 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, re
 	if err != nil {
 		return nil, err
 	}
-	turnAuth, err := s.resolveTurnAuth(adapter.Runtime, selection.AccountID)
+	turnAuth, err := s.resolveTurnAuth(adapter.Runtime, &selection)
 	if err != nil {
 		return nil, err
 	}
@@ -229,6 +229,7 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, re
 		ProjectPath:                workspaceValue.Path,
 		RuntimeRoot:                filepath.Join(s.Store.RuntimeDir(), "sessions", detail.Project.ID),
 		RuntimeDigest:              runtimeReference.Digest,
+		DieterExecutable:           s.CLIExecutable,
 		ContentPresentationEnabled: true,
 		PresentCommand:             s.CLIWord() + " " + conversationGroup(detail.Card) + " present " + detail.Card.ID,
 		Environment:                s.agentEnvironment(detail.Card.ID, turnID),
@@ -349,21 +350,58 @@ func (s *Service) SubmitCardPartsWithSelection(ref string, parts []model.UIMessa
 	}
 }
 
-// resolveTurnAuth resolves the provider account a Claude Code or Codex
-// adapter turn runs on. Without an accounts engine (tests with injected
-// runners, tools) turns keep the adapters' own credentials; other adapters
-// have no accounts.
-func (s *Service) resolveTurnAuth(adapterRuntime, accountID string) (accounts.TurnAuth, error) {
-	if adapterRuntime != "claude-code" && adapterRuntime != "codex" {
+// resolveTurnAuth resolves the provider accounts a Claude Code, Codex or Oh
+// My Pi turn runs on. An Oh My Pi turn also records its advisor's account in
+// the selection's advisor_account option. Without an accounts engine (tests
+// with injected runners, tools) turns keep the adapters' own credentials;
+// other adapters have no accounts.
+func (s *Service) resolveTurnAuth(adapterRuntime string, selection *model.HarnessSelection) (accounts.TurnAuth, error) {
+	switch adapterRuntime {
+	case "claude-code", "codex", ompAdapter:
+	default:
 		return accounts.TurnAuth{}, nil
 	}
 	if s.Accounts == nil {
-		return accounts.TurnAuth{AccountID: accountID}, nil
+		return accounts.TurnAuth{AccountID: selection.AccountID}, nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), turnAuthTimeout)
 	defer cancel()
-	return s.Accounts.ResolveTurn(ctx, adapterRuntime, accountID)
+	if adapterRuntime != ompAdapter {
+		return s.Accounts.ResolveTurn(ctx, adapterRuntime, selection.AccountID)
+	}
+	options := selection.ProviderOptions
+	turn, err := s.Accounts.ResolveOMPTurn(ctx, selection.Model, selection.AccountID, options[ompAdvisorModelOption], options[ompAdvisorAccountOption])
+	if err != nil {
+		return accounts.TurnAuth{}, err
+	}
+	selection.ProviderOptions = withOMPAdvisorAccount(options, turn.AdvisorAccountID)
+	return accounts.TurnAuth{AccountID: turn.AccountID}, nil
 }
+
+// withOMPAdvisorAccount returns options with the resolved advisor account,
+// or without one when the turn has no advisor on another provider's account.
+func withOMPAdvisorAccount(options map[string]string, accountID string) map[string]string {
+	if options[ompAdvisorAccountOption] == accountID {
+		return options
+	}
+	next := make(map[string]string, len(options)+1)
+	for key, value := range options {
+		next[key] = value
+	}
+	if accountID == "" {
+		delete(next, ompAdvisorAccountOption)
+	} else {
+		next[ompAdvisorAccountOption] = accountID
+	}
+	return next
+}
+
+// Oh My Pi's adapter and its advisor options (harnesses.yaml).
+const (
+	ompAdapter              = "omp-acp"
+	ompAdvisorModelOption   = "advisor_model"
+	ompAdvisorAccountOption = "advisor_account"
+)
 
 // turnAuthTimeout bounds account resolution, which may refresh a Codex token.
 const turnAuthTimeout = 45 * time.Second

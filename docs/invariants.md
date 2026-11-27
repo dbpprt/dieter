@@ -77,10 +77,12 @@ invariant, it is named; keep it passing rather than weakening it.
   stays on the daemon that received it and is never replicated.
 - A provider login belongs to one account on one machine and has exactly one
   refresher: the provider's own tool, or the daemon under that account's lock.
-  Never copy a login to another machine. A Claude Code or Codex turn runs on
-  the account its selection names, resolved on the conversation's owner
-  daemon, and is refused when that account is not signed in there
-  (`internal/engine/accounts`).
+  The daemon never refreshes a Claude login itself; Claude Code does. Never
+  copy a login to another machine. A Claude Code, Codex or Oh My Pi turn runs
+  on the accounts its selection names (for Oh My Pi, the implementation
+  model's account and, for an advisor on the other provider, the advisor's
+  account), resolved on the conversation's owner daemon, and is refused when
+  one of them is not signed in there (`internal/engine/accounts`).
 - Permit concurrent agent turns in the same registered checkout. There are no
   global, harness or board parallel-session caps. Runtime leases enforce at most
   one active turn per conversation across API, CLI and scheduled starts.
@@ -120,12 +122,22 @@ invariant, it is named; keep it passing rather than weakening it.
 - Dieter never reads, stores, refreshes, replicates or injects Claude.ai
   credentials: Claude Code keeps each login in its own store, inside a
   per-account config directory
-  ([ADR 0006](adr/0006-provider-accounts.md)). Provider credentials never leave
-  the machine that signed in; they never enter KV records, the vault, a client
-  or the gateway. Provider accounts, each machine's login state and usage
-  replicate between the account's daemons as validated KV records without
-  secrets (`internal/replication/schema`), which only `ProviderAccountService`
-  writes; a machine writes only its own login records.
+  ([ADR 0006](adr/0006-provider-accounts.md)). There is exactly one exception
+  ([ADR 0007](adr/0007-oh-my-pi-managed-accounts.md)): an Oh My Pi turn on a
+  Claude account whose Oh My Pi access a person turned on (per account, off by
+  default). For that turn the conversation's owner daemon reads only the
+  login's access token from Claude Code's store, and serves it only to that
+  turn, on the local route, through `GetProviderTurnToken` with the turn's own
+  token. It never reads or uses the refresh token and never writes Claude
+  Code's store; when the token is due, it asks Claude Code to refresh
+  (`internal/engine/accounts/omp.go`). The access token never enters a file,
+  an environment variable, a log or a replicated record. Provider credentials
+  never leave the machine that signed in; they never enter KV records, the
+  vault, a client or the gateway. Provider accounts, each machine's login
+  state and usage replicate between the account's daemons as validated KV
+  records without secrets (`internal/replication/schema`), which only
+  `ProviderAccountService` writes; a machine writes only its own login
+  records.
 - A daemon proves possession of its enrolled Ed25519 key on every gateway link
   connection (`internal/link/possession.go`, `internal/security/linkauth`).
   Never accept a daemon ID without cryptographic proof.
@@ -133,9 +145,9 @@ invariant, it is named; keep it passing rather than weakening it.
   token (`internal/api/trust.go`), and starting a roster or recovering with the
   recovery key runs only on the local route.
 - Agent turns never manage provider accounts: every `ProviderAccountService`
-  mutation, sign-in and sign-out included, refuses a turn token
-  (`internal/api/provider_accounts.go`). Agents may list accounts and choose
-  one for the work they create.
+  mutation, sign-in, sign-out and Oh My Pi access included, refuses a turn
+  token (`internal/api/provider_accounts.go`). Agents may list accounts and
+  choose one for the work they create.
 - Client sessions and roster devices have binary full access or no access. Do
   not add scopes.
 - Keep relay tunnels, queues and messages bounded (`internal/transport/relay`:

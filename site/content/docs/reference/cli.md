@@ -297,23 +297,28 @@ Usage: dieter provider <action> [options]
 The Claude and ChatGPT accounts agent turns run on. Accounts, each machine's
 sign-in state and plan usage replicate between your machines; credentials
 never leave the machine that signed in. Claude Code and Codex keep their own
-logins, so Dieter never reads Claude credentials.
+logins. Dieter reads a Claude login's access token only for Oh My Pi turns,
+and only on accounts with omp-access on.
 
 Accounts (any machine):
-  list     List accounts, their sign-in state and tightest usage window
-  add      Add a Claude or ChatGPT account; then sign in with login
-  rename   Rename an account
-  include  Count an account in usage summaries
-  exclude  Leave an account out of usage summaries
-  default  Make an account its provider's default for new conversations
-  remove   Remove an account; every machine signs it out and deletes its files
+  list        List accounts, their sign-in state and tightest usage window
+  add         Add a Claude or ChatGPT account; then sign in with login
+  rename      Rename an account
+  include     Count an account in usage summaries
+  exclude     Leave an account out of usage summaries
+  default     Make an account its provider's default for new conversations
+  omp-access  Let Oh My Pi turns use a Claude account (Anthropic policy risk)
+  remove      Remove an account; every machine signs it out and deletes its files
 
 On the target machine (this one, or global --machine ID|NAME):
-  login    Sign an account in with the provider's own sign-in
-  logout   Sign an account out
-  check    Verify an account's sign-in now
-  usage    Show plan usage and Dieter's token use; --refresh reads it now
-  reset    Spend one ChatGPT rate-limit reset credit
+  login       Sign an account in with the provider's own sign-in
+  logout      Sign an account out
+  check       Verify an account's sign-in now
+  usage       Show plan usage and Dieter's token use; --refresh reads it now
+  reset       Spend one ChatGPT rate-limit reset credit
+
+Inside agent turns:
+  token       Print the running turn's own access token (harness helper)
 
 ACCOUNT is an account ID (pa_...) or a unique case-insensitive label. Pass
 --account ID|LABEL to card, chat and schedule commands to pick the account a
@@ -326,9 +331,11 @@ cannot add, change, sign in or remove accounts.
 ```text
 Usage: dieter provider list [--provider claude|chatgpt] [--format table|json|jsonl|ids]
 
-List provider accounts. IDENTITY is the provider login the account is bound
-to by its first sign-in, USAGE the tightest plan window's remaining share and
-MACHINES how many machines reporting the account are signed in to it.
+List provider accounts. OMP is whether Oh My Pi turns may use a Claude
+account (dieter provider omp-access; ChatGPT accounts need no opt-in).
+IDENTITY is the provider login the account is bound to by its first sign-in,
+USAGE the tightest plan window's remaining share and MACHINES how many
+machines reporting the account are signed in to it.
 ```
 
 ### dieter provider add
@@ -369,6 +376,22 @@ Leave ACCOUNT out of the provider usage summaries the apps show.
 ```text
 Usage: dieter provider default ACCOUNT [--format text|json]
 Make ACCOUNT its provider's default: conversations started without --account use it.
+```
+
+### dieter provider omp-access
+
+```text
+Usage: dieter provider omp-access ACCOUNT on|off [--format text|json]
+
+Let Oh My Pi turns run on a Claude account (on), or stop them (off). Off by
+default; ChatGPT accounts need no opt-in. The choice replicates to every
+machine and applies from the next token Oh My Pi asks for.
+
+Anthropic does not permit Claude.ai logins in third-party tools such as Oh My
+Pi; Anthropic may block or suspend the account at any time. Dieter hands Oh
+My Pi only short-lived access tokens from the account's Claude Code login:
+Claude Code keeps refreshing that login, and Oh My Pi never sees a refresh
+token.
 ```
 
 ### dieter provider remove
@@ -447,12 +470,15 @@ repeated key never spends a second credit.
 ### dieter provider token
 
 ```text
-Usage: dieter provider token --turn
+Usage: dieter provider token --turn [--provider claude|chatgpt]
 
-Print the current access token of the running agent turn's own Sign in with
-ChatGPT account, and nothing else. Codex runs this as its provider auth
-command inside Dieter turns. It needs the turn's DIETER_TURN_TOKEN and talks
-only to the local daemon.
+Print the current access token of one of the running agent turn's own
+accounts, and nothing else. Without --provider, the turn's Sign in with
+ChatGPT account: Codex runs this as its provider auth command inside Dieter
+turns. With --provider, the account an Oh My Pi turn uses for that provider,
+for its implementation model or its advisor: Oh My Pi runs this from its
+managed models.yml, and the daemon refuses a provider the turn does not use.
+It needs the turn's DIETER_TURN_TOKEN and talks only to the local daemon.
 ```
 
 ## dieter project (alias: projects)

@@ -766,7 +766,8 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
                 problem,
             )
         }
-        val request = Creation.request(plan.input)
+        // Oh My Pi names the accounts the daemons would not fall back to.
+        val request = Creation.request(plan.input.copy(selection = plan.controls.settledSelection))
         val card =
             if (captureId != null) submitCapture(captureId, request, input.chat)
             else outbox.createConversation(request, input.chat, submissionId)
