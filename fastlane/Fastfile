@@ -507,24 +507,23 @@ platform :ios do
           "runtimes"
         ].select { |runtime| runtime["isAvailable"] && runtime["platform"] == "iOS" }
       sdk = Dieter.capture("xcrun", "--sdk", "iphonesimulator", "--show-sdk-version").strip
+      # Some runtimes serve only one new device (Xcode 27's iOS 27.x "iPhone Duo"
+      # builds share the SDK's version), so only those that run the device count.
+      device_type = target.fetch("device_type")
+      runtimes =
+        runtimes.select do |entry|
+          entry.fetch("supportedDeviceTypes", []).any? { |type| type["identifier"] == device_type }
+        end
       runtime =
         target["runtime"] ||
           runtimes.find { |entry| entry["version"].start_with?(sdk) }&.dig("identifier") ||
           runtimes.max_by { |entry| Gem::Version.new(entry["version"]) }&.dig("identifier")
       unless runtime && runtimes.any? { |entry| entry["identifier"] == runtime }
         raise Dieter::Unavailable,
-              "No installed iOS simulator runtime (xcodebuild -downloadPlatform iOS)"
+              "No installed iOS simulator runtime runs #{device_type} (xcodebuild -downloadPlatform iOS)"
       end
       name = "Dieter Pipeline #{SecureRandom.uuid}"
-      udid =
-        Dieter.capture(
-          "xcrun",
-          "simctl",
-          "create",
-          name,
-          target.fetch("device_type"),
-          runtime
-        ).strip
+      udid = Dieter.capture("xcrun", "simctl", "create", name, device_type, runtime).strip
       Dieter::Journal.write(journal, "ID" => udid, "Name" => name)
       cleanup.add do
         system("xcrun", "simctl", "shutdown", udid)

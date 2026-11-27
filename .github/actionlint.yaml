@@ -1,0 +1,5 @@
+# GitHub's macOS 27 image with Xcode 27 is still a preview label that actionlint
+# does not list yet; the Apple CI and release jobs build on it.
+self-hosted-runner:
+  labels:
+    - xcode-27

@@ -30,7 +30,7 @@ just setup                 # + Fastlane gems (into mise's Ruby) and harness deps
 just pipeline config_init  # optional: ignored fastlane/local.json (mode 0600)
 ```
 
-Install Xcode 26.5+ with an iOS simulator runtime, and the Android SDK
+Install Xcode 27+ (CI and releases build with 27.2) with an iOS simulator runtime, and the Android SDK
 (`ANDROID_HOME`, else `~/Library/Android/sdk`) yourself. `JAVA_HOME` comes from
 mise (Temurin 21).
 

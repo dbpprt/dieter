@@ -226,7 +226,7 @@ jobs:
 
   testflight:
     needs: [version, publish]
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 60
     environment: apple-signing
     permissions:
@@ -260,7 +260,7 @@ jobs:
   # build is already in App Store Connect.
   testflight-only:
     if: inputs.channel == 'testflight' && github.ref == 'refs/heads/main'
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 60
     environment: apple-signing
     permissions:
