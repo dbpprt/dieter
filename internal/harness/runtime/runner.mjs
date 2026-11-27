@@ -368,7 +368,7 @@ const [
   { tool, toUIMessageStream },
   { z },
   { createLocalCodex },
-  { createLocalClaudeCode },
+  { claudeInactiveBuiltinTools, createLocalClaudeCode },
   { codexConfig, dshACPArgs, dshPackageVersion, ompACPArgs, ompRuntimeConfig },
   { createLocalOMP, ompSource },
   { harnessDiagnosticErrorMessage },
@@ -379,6 +379,7 @@ const [
     claudeAuthFailureMessage,
     claudeAuthFailureText,
     createClaudeTurnSummary,
+    needsClaudeDelegationFollowUp,
     observeClaudeTurnChunk,
     retryClaudeAuthFailure,
     retryEmptyClaudeResume,
@@ -626,6 +627,9 @@ try {
       },
       permissionMode: "allow-all",
       sandboxConfig: { workDir: sandboxWorkDir },
+      ...(adapter === "claude-code"
+        ? { inactiveTools: claudeInactiveBuiltinTools(candidateHarness) }
+        : {}),
     });
   // OMP receives its model as a launch argument (ompACPArgs).
   let agent = createAgent(harness, adapter === "omp-acp" ? undefined : request.model || undefined);
@@ -851,21 +855,22 @@ try {
         retry: streamPrompt,
       })) ?? primarySummary;
   }
-  await retryEmptyClaudeResume({
+  primarySummary = await retryEmptyClaudeResume({
     adapter,
     hasResumeSession: Boolean(request.session),
     continuing: request.continue === true,
     firstSummary: primarySummary,
     retry: streamPrompt,
   });
-  // Claude Agent SDK 0.3.213 can end a provider-executed Agent step after
-  // returning the child result without streaming the parent's final prose.
   // Continue the same durable session once and keep one logical UI response.
   if (
-    adapter === "claude-code" &&
-    claudeDelegationSeen &&
-    !claudeFinalTextSeen &&
-    !controller.signal.aborted
+    needsClaudeDelegationFollowUp({
+      adapter,
+      delegationSeen: claudeDelegationSeen,
+      finalTextSeen: claudeFinalTextSeen,
+      aborted: controller.signal.aborted,
+      summary: primarySummary,
+    })
   ) {
     await streamPrompt(
       "Continue the current task. Use the completed subagent results and provide the final answer requested by the user. Do not launch replacement subagents unless one failed.",
@@ -880,6 +885,9 @@ try {
       capabilityCollector.finalize("aborted");
       capabilityCollector.finishTaskPlan("aborted");
     } else {
+      // Stopping the session ends the Codex app-server and with it any child
+      // agent the turn left running; do not leave those shown as running.
+      if (adapter === "codex") capabilityCollector.finalize("aborted");
       capabilityCollector.finishTaskPlan("completed");
     }
   }

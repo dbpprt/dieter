@@ -33,6 +33,27 @@ function clean(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+// Claude Code's Agent result, and a resumed agent's SendMessage result, are
+// envelopes whose report is a list of text blocks. Show the report.
+function agentReportText(output) {
+  if (!output || typeof output !== "object") return output;
+  const blocks = Array.isArray(output.content)
+    ? output.content
+    : Array.isArray(output.inlineHandback?.content)
+      ? output.inlineHandback.content
+      : undefined;
+  const text = (blocks ?? [])
+    .filter((block) => block?.type === "text" && typeof block.text === "string")
+    .map((block) => block.text)
+    .join("\n");
+  return text || output;
+}
+
+// Claude Code names its subagents "a" + 16 hex digits. SendMessage also
+// reaches teammates and other sessions (uds:…, c-…, names); only an agent id
+// resumes one of the conversation's subagents.
+const claudeAgentIdPattern = /^a[0-9a-f]{16}$/;
+
 const maxProviderNoticeLength = 1024;
 
 /**
@@ -70,6 +91,9 @@ export function createSubagentCapabilityCollector({
   const claudeToolNames = new Map();
   const claudeTaskCreates = new Map();
   const claudeTasks = new Map();
+  // agentId → identity of Agent calls this worker saw, for SendMessage resumes.
+  const claudeAgents = new Map();
+  const claudeResumes = new Set();
   let claudeTaskSequence = 0;
   let taskPlan;
   let taskPlanFingerprint = "";
@@ -325,6 +349,10 @@ export function createSubagentCapabilityCollector({
       return;
     }
     if (adapter !== "claude-code") return;
+    if (toolName === "sendmessage") {
+      consumeClaudeAgentMessage(chunk, id);
+      return;
+    }
     if (toolName !== "agent" && toolName !== "task") return;
     if (!id) return;
     if (chunk.type === "tool-input-available") {
@@ -338,9 +366,14 @@ export function createSubagentCapabilityCollector({
         status: "running",
       });
     } else if (chunk.type === "tool-output-available") {
+      const agentId = chunk.output?.agentId;
+      if (typeof agentId === "string" && agentId) {
+        const spawned = subagents.get(id);
+        claudeAgents.set(agentId, { name: spawned?.name, agentType: spawned?.agentType });
+      }
       upsert(id, {
         status: "completed",
-        recentOutput: compactLines(chunk.output),
+        recentOutput: compactLines(agentReportText(chunk.output)),
       });
     } else if (chunk.type === "tool-output-error") {
       upsert(id, {
@@ -348,6 +381,57 @@ export function createSubagentCapabilityCollector({
         error: chunk.errorText || "Subagent failed",
       });
     }
+  }
+
+  // Claude Code resumes a finished subagent with SendMessage({to: agentId}):
+  // no new Agent call, and the agent runs inside the SendMessage call. Show
+  // each resumed run as a subagent of the current response in place of that
+  // call. Agents spawned in an earlier turn are unknown to this worker; the
+  // call's summary names the follow-up work instead.
+  function consumeClaudeAgentMessage(chunk, id) {
+    if (!id) return;
+    if (chunk.type === "tool-input-available") {
+      const input = chunk.input && typeof chunk.input === "object" ? chunk.input : {};
+      const to = String(input.to || "").trim();
+      const known = claudeAgents.get(to);
+      if (!known && !claudeAgentIdPattern.test(to)) return;
+      claudeResumes.add(id);
+      upsert(id, {
+        parentToolCallId: id,
+        name: String(input.summary || known?.name || `Agent ${to.slice(0, 7)}`),
+        agentType: known?.agentType || "Agent",
+        description: known?.name ? `Resumes ${known.name}` : `Resumes agent ${to}`,
+        task: typeof input.message === "string" ? input.message : "",
+        status: "running",
+      });
+      return;
+    }
+    if (chunk.type !== "tool-output-available" && chunk.type !== "tool-output-error") return;
+    const output = chunk.output && typeof chunk.output === "object" ? chunk.output : undefined;
+    const resumed =
+      output != null &&
+      (output.inlineHandback != null || /^Resumed agent/i.test(String(output.message || "")));
+    if (!claudeResumes.has(id) && !resumed) return;
+    const identity = claudeResumes.has(id)
+      ? {}
+      : {
+          parentToolCallId: id,
+          name: String(output.inlineHandback?.displayName || "Resumed agent"),
+          agentType: "Agent",
+        };
+    if (chunk.type === "tool-output-error" || output?.success === false) {
+      upsert(id, {
+        ...identity,
+        status: "failed",
+        error: chunk.errorText || String(output?.message || "Subagent failed"),
+      });
+      return;
+    }
+    upsert(id, {
+      ...identity,
+      status: "completed",
+      recentOutput: compactLines(agentReportText(chunk.output)),
+    });
   }
 
   function consumeOMPEnvelope(envelope) {

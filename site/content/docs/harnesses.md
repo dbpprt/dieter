@@ -72,7 +72,8 @@ Changing that selection does not reconfigure the already-running turn.
 The **Subagents** tab shows agents that a harness delegates to during a
 conversation. Codex reports their lifecycle automatically when it delegates;
 there is no Dieter setting to enable. To try it, explicitly ask Codex to
-delegate two independent pieces of work to subagents.
+delegate two independent pieces of work to subagents. Claude Code's Agent calls
+appear there too, and so does each later resumption of one of those agents.
 
 ## Runtime lifecycle
 
@@ -194,7 +195,14 @@ process tools, which appear in the conversation's **Processes** tab. A process
 finishing does not wake an idle conversation: an agent must collect required
 build or test results before ending its turn, or verify that a persistent
 server is ready. OMP's and Claude Code's own background execution is disabled,
-because promised follow-ups would be lost when their provider session closes.
+including Claude Code's Monitor, scheduled wake-ups and workflows, because
+promised follow-ups would be lost when their provider session closes.
+
+## Questions from agents
+
+Dieter shows no interactive question prompts, so Claude Code's question tool is
+turned off: an agent that needs your input asks in its reply and ends its turn,
+and you answer with your next message.
 
 ## Provider reconnects
 

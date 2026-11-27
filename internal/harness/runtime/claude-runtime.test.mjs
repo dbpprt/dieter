@@ -5,11 +5,15 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { HarnessAgent } from "@ai-sdk/harness/agent";
-import { createLocalClaudeCode } from "./claude-runtime.mjs";
+import {
+  claudeInactiveBuiltinTools,
+  createLocalClaudeCode,
+  dieterDisabledClaudeTools,
+} from "./claude-runtime.mjs";
 import { createLocalSandboxProvider } from "./local-sandbox.mjs";
 
 test(
-  "Claude disables native background tasks at the SDK boundary on fresh and resumed turns",
+  "Claude disables native background tasks and follow-up tools at the SDK boundary on fresh and resumed turns",
   { timeout: 30_000 },
   async (t) => {
     const root = await realpath(await mkdtemp(join(tmpdir(), "dieter-claude-background-")));
@@ -64,11 +68,23 @@ test(
         commands: [],
       }),
     };
+    // Every tool Dieter disables is one the pinned adapter declares.
+    assert.deepEqual(claudeInactiveBuiltinTools(harness), [...dieterDisabledClaudeTools]);
     const agent = new HarnessAgent({
       harness: fixtureHarness,
       permissionMode: "allow-all",
       sandboxConfig: { workDir: "repo" },
+      inactiveTools: claudeInactiveBuiltinTools(harness),
     });
+    const disallowed = [
+      "AskUserQuestion",
+      "Monitor",
+      "ScheduleWakeup",
+      "CronCreate",
+      "CronDelete",
+      "CronList",
+      "Workflow",
+    ];
     session = await agent.createSession({ sessionId: "background-fixture", sandboxSession });
     async function run() {
       const result = await agent.stream({ session, prompt: "Report the SDK options." });
@@ -84,6 +100,9 @@ test(
     assert.equal(first.custom, "preserved");
     assert.equal(first.effort, "high");
     assert.equal(first.resume, undefined);
+    assert.deepEqual([...first.disallowedTools].sort(), [...disallowed].sort());
+    // Removing tools must not narrow the rest of Claude Code's tool list.
+    assert.equal(first.tools, undefined);
     const state = await session.stop();
     session = undefined;
     session = await agent.createSession({
@@ -95,6 +114,7 @@ test(
     assert.equal(resumed.disabled, "1");
     assert.equal(resumed.custom, "preserved");
     assert.equal(resumed.resume, "fixture-claude-session");
+    assert.deepEqual([...resumed.disallowedTools].sort(), [...disallowed].sort());
   },
 );
 
@@ -107,6 +127,8 @@ export async function* query({ options }) {
     custom: options.env?.DIETER_FIXTURE_OPTION,
     effort: options.effort,
     resume: options.resume,
+    disallowedTools: options.disallowedTools,
+    tools: options.tools,
   });
   yield { type: 'stream_event', session_id, event: { type: 'content_block_start', index: 0, content_block: { type: 'text' } } };
   yield { type: 'stream_event', session_id, event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } } };
