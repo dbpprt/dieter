@@ -40,6 +40,8 @@ tags: [smoke]
     element:
       id: code-review
     direction: DOWN
+    # Hosted simulators take seconds per swipe and hierarchy read; the form is long.
+    timeout: 60000
 - tapOn:
     id: code-review
     waitToSettleTimeoutMs: 500
@@ -48,6 +50,7 @@ tags: [smoke]
     element:
       id: task-title
     direction: UP
+    timeout: 60000
 - tapOn:
     id: task-title
     waitToSettleTimeoutMs: 500

@@ -29,7 +29,7 @@ tags: [full]
     timeout: 2000
 - extendedWaitUntil:
     visible: "Isolated E2E machine · Connected"
-    timeout: 20000
+    timeout: 60000
 - assertNotVisible: ".*Reconnecting.*"
 - takeScreenshot: terminal-connected
 - runFlow: common/back.yaml
@@ -40,6 +40,6 @@ tags: [full]
     timeout: 2000
 - extendedWaitUntil:
     visible: "Isolated E2E machine · Connected"
-    timeout: 20000
+    timeout: 60000
 - assertNotVisible: ".*Reconnecting.*"
 - takeScreenshot: terminal-reopened

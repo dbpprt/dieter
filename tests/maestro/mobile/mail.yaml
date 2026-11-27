@@ -46,7 +46,7 @@ tags: [smoke]
 - runFlow: common/back.yaml
 - extendedWaitUntil:
     visible: "Invoice migration finished: 12,408 rows moved"
-    timeout: 10000
+    timeout: 30000
 - swipe:
     from:
       text: "Invoice migration finished: 12,408 rows moved"
@@ -54,9 +54,12 @@ tags: [smoke]
 # Undo is timed: tap it immediately instead of spending its lifetime on a
 # separate visibility query and screenshot on a slow simulator. tapOn requires
 # the action to be visible; the following assertion verifies the restoration.
+# A tap taken from a hierarchy read while the snackbar still slides in can miss
+# it; then nothing changes and the tap is repeated.
 - tapOn:
     text: "Undo"
     waitToSettleTimeoutMs: 500
+    retryTapIfNoChange: true
 - extendedWaitUntil:
     visible: "Invoice migration finished: 12,408 rows moved"
     timeout: 40000

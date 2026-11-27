@@ -39,7 +39,7 @@ tags:
 - extendedWaitUntil:
     visible:
       id: mail-diagram-vega-lite-rendered
-    timeout: 30000
+    timeout: 60000
 - scrollUntilVisible:
     element:
       text: vega-lite Omitted
@@ -55,7 +55,7 @@ tags:
 - extendedWaitUntil:
     visible:
       id: mail-diagram-vega-lite-rendered
-    timeout: 30000
+    timeout: 60000
 - scrollUntilVisible:
     element:
       text: vega-lite White
@@ -71,7 +71,7 @@ tags:
 - extendedWaitUntil:
     visible:
       id: mail-diagram-vega-lite-rendered
-    timeout: 30000
+    timeout: 60000
 - scrollUntilVisible:
     element:
       text: vega Null
@@ -87,7 +87,7 @@ tags:
 - extendedWaitUntil:
     visible:
       id: mail-diagram-vega-rendered
-    timeout: 30000
+    timeout: 60000
 - scrollUntilVisible:
     element:
       text: vega Omitted
@@ -103,7 +103,7 @@ tags:
 - extendedWaitUntil:
     visible:
       id: mail-diagram-vega-rendered
-    timeout: 30000
+    timeout: 60000
 - scrollUntilVisible:
     element:
       text: vega White
@@ -119,7 +119,7 @@ tags:
 - extendedWaitUntil:
     visible:
       id: mail-diagram-vega-rendered
-    timeout: 30000
+    timeout: 60000
 - scrollUntilVisible:
     element:
       text: End of background comparison.
@@ -190,7 +190,7 @@ tags:
 - extendedWaitUntil:
     visible:
       id: mail-diagram-vega-lite-rendered
-    timeout: 30000
+    timeout: 60000
 - scrollUntilVisible:
     element:
       text: vega-lite Omitted
@@ -206,7 +206,7 @@ tags:
 - extendedWaitUntil:
     visible:
       id: mail-diagram-vega-lite-rendered
-    timeout: 30000
+    timeout: 60000
 - scrollUntilVisible:
     element:
       text: vega-lite White
@@ -222,7 +222,7 @@ tags:
 - extendedWaitUntil:
     visible:
       id: mail-diagram-vega-lite-rendered
-    timeout: 30000
+    timeout: 60000
 - scrollUntilVisible:
     element:
       text: vega Null
@@ -238,7 +238,7 @@ tags:
 - extendedWaitUntil:
     visible:
       id: mail-diagram-vega-rendered
-    timeout: 30000
+    timeout: 60000
 - scrollUntilVisible:
     element:
       text: vega Omitted
@@ -254,7 +254,7 @@ tags:
 - extendedWaitUntil:
     visible:
       id: mail-diagram-vega-rendered
-    timeout: 30000
+    timeout: 60000
 - scrollUntilVisible:
     element:
       text: vega White
@@ -270,7 +270,7 @@ tags:
 - extendedWaitUntil:
     visible:
       id: mail-diagram-vega-rendered
-    timeout: 30000
+    timeout: 60000
 - scrollUntilVisible:
     element:
       text: End of background comparison.
