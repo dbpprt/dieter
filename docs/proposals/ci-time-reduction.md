@@ -19,9 +19,8 @@ Four changes get PR and main CI to about **38 minutes** (a third), and make the 
 green again:
 
 1. **Boot the simulator after the build** (a few lines in `Fastfile`). Today it idles
-   in memory through the whole link on a 7 GB runner. The release workflow links the
-   same framework without a simulator in **31 minutes instead of 73**. An A/B run is
-   in flight (§6).
+   in memory through the whole link on a 7 GB runner. An A/B run confirmed it: Gradle
+   drops from 84 to 37 minutes and the iOS job from 128 to 92 (§6).
 2. **Debug Kotlin/Native on PRs and main**, Release on the nightly and in a
    release-blocking smoke job. The Release flows exist because of a Release-only crash
    (#142), so that safeguard moves to where shipping happens instead of disappearing.
@@ -65,7 +64,7 @@ Each PR run spends about 172 macOS minutes in two concurrent slots.
 
 ## 2. What the data shows
 
-- **A booted simulator through the whole link.** `fastlane/Fastfile` (`platform :ios`
+- **A booted simulator through the whole link (confirmed, §6).** `fastlane/Fastfile` (`platform :ios`
   `lane :e2e`) starts `xcrun simctl bootstatus <udid> -b` before `build_ios_simulator`,
   on purpose ("The boot overlaps the build"). The release workflow's `apple / ios` job
   runs the same kind of Release link (device slice, same runner pool, no caches at all,
@@ -106,7 +105,7 @@ Each PR run spends about 172 macOS minutes in two concurrent slots.
 Savings are on the critical path per run. "Measured" means from the data above;
 "estimate" means extrapolated and confirmed in §6.
 
-### R1. Boot the simulator after the build — about 40–50 min off every iOS job (estimate)
+### R1. Boot the simulator after the build — measured 36 min off every iOS job
 
 In `lane :e2e`, create the simulator as now but start `bootstatus` only after
 `build_ios_simulator`. The boot (1–2.5 minutes) moves onto the critical path, and
@@ -148,8 +147,8 @@ on reruns: a failed flow reruns one 15-minute shard instead of a 130-minute job.
 | ---------------------------------------- | -------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | Send queued message now                  | Android  | 11/11          | `containsChild` matches direct children only; the queued text is a grandchild of `composer-queue`                                                                                                                                           | `containsDescendants`; the "not in the timeline" check becomes real too        |
 | Send queued message now                  | iOS      | 7/12           | "send now" stops the turn through `board.cancel`, which needs the card in the account view; a conversation that just started can be running before that view lists it ("The card is no longer available", also seen in `MobileJourneyTest`) | `cancel` falls back to the conversation's known machine (core fix + unit test) |
-| Providers                                | iOS      | 3 (+3 Android) | `scrollUntilVisible … centerElement` can't centre the last row once the page grew                                                                                                                                                           | scroll to the end instead                                                      |
-| Code review                              | iOS      | 2/6            | 20 s default scroll timeout on a long form; the element was on screen in the failure capture                                                                                                                                                | 60 s                                                                           |
+| Providers                                | iOS      | 3 (+3 Android) | `scrollUntilVisible … centerElement` can't centre the last row once the page grew                                                                                                                                                           | scroll to the end (#240), plus a 40 s scroll timeout                           |
+| Code review                              | iOS      | 2/6            | 20 s default scroll timeout on a long form, and 20 s for Changes to load the diff; both were on screen in the failure captures                                                                                                              | 60 s                                                                           |
 | Mail offline graphics, chart backgrounds | iOS      | 3 + 1          | Diagrams render in a web view several times slower on hosted simulators; rendered at failure time                                                                                                                                           | 60 s render waits                                                              |
 | Mail                                     | iOS      | 2              | The Undo tap can land while the snackbar slides in                                                                                                                                                                                          | `retryTapIfNoChange`                                                           |
 | Conversation links and images            | iOS      | 3              | Quick Look loads out of process; instant `assertVisible`                                                                                                                                                                                    | waits up to 60 s                                                               |
@@ -246,8 +245,7 @@ about 60 minutes unless larger runners are bought.
 ## 5. Phases
 
 - **Phase 0 — confirm the two big assumptions (half a day).**
-  1. An `ios_only` run with the boot after the build, against a control run of main;
-     in flight (§6). Add a swap sampler (`sysctl vm.swapusage`, `vm_stat`) if the result
+  1. An `ios_only` run with the boot after the build: done, R1 confirmed (§6). Add a swap sampler (`sysctl vm.swapusage`, `vm_stat`) if the result
      is ambiguous.
   2. The same with `configuration:debug`: Debug link, Debug xcodebuild and per-flow
      times against the Appendix.
@@ -263,16 +261,23 @@ job, time per `ios` phase (link, xcodebuild, flows), cache hits per job and tota
 size, failures per flow and platform, the nightly's green rate, and macOS jobs running
 when a job is enqueued.
 
-## 6. Phase 0 experiment (running)
+## 6. Phase 0 experiment: result
 
-| Run                                                                      | Branch                               | Change                          |
-| ------------------------------------------------------------------------ | ------------------------------------ | ------------------------------- |
-| [46052306413](https://github.com/dbpprt/dieter/actions/runs/46052306413) | `ci-experiment/sim-boot-after-build` | simulator boots after the build |
-| [46052310568](https://github.com/dbpprt/dieter/actions/runs/46052310568) | `main`                               | control                         |
+| Run                                                                      | Branch                               | Change                          | Result                                                                             |
+| ------------------------------------------------------------------------ | ------------------------------------ | ------------------------------- | ---------------------------------------------------------------------------------- |
+| [46052306413](https://github.com/dbpprt/dieter/actions/runs/46052306413) | `ci-experiment/sim-boot-after-build` | simulator boots after the build | measured below                                                                     |
+| [46052310568](https://github.com/dbpprt/dieter/actions/runs/46052310568) | `main`                               | control                         | cancelled to free macOS slots for a release; the historical medians above stand in |
 
-Both are `ios_only` dispatches started at the same time on the same runner pool.
-Compare the `:ui:linkReleaseFrameworkIosSimulatorArm64` task time, xcodebuild and the
-job total. The experiment branch is not for merging.
+|                                                                | Historical median (simulator booted during the build) | Experiment (boot after the build) |
+| -------------------------------------------------------------- | ----------------------------------------------------: | --------------------------------: |
+| Gradle: pre-link + `:ui:linkReleaseFrameworkIosSimulatorArm64` |                                      11.4 + 72.6 = 84 |            **37** (link about 35) |
+| xcodebuild + boot + install                                    |                                           15.5 + boot |                          about 16 |
+| `ios` job total (smoke flows)                                  |                                                   128 |                            **92** |
+
+R1 is confirmed. The Release link runs as fast as in the release workflow (31 there,
+about 35 here), and the job is 36 minutes shorter. The run failed two flows, Mail
+offline graphics (a render wait) and Code review (the Changes diff wait). The branch is
+`main` plus the boot change only; this change fixes both flows.
 
 ## Appendix: per-flow Maestro times on CI (median seconds, failures)
 

@@ -86,9 +86,11 @@ tags: [smoke]
 - tapOn:
     id: "code-review-location-rev_.*"
     waitToSettleTimeoutMs: 500
+# Changes reads the diff from the machine; on hosted simulators that took just
+# over 20 s while the diff was already on screen in the failure capture.
 - extendedWaitUntil:
     visible: ".*A change for the mock code reviewer.*"
-    timeout: 20000
+    timeout: 60000
 - takeScreenshot: code-review-changes
 - runFlow: common/back.yaml
 # Flows share one fixture and run in file order (this one after inbox): move
