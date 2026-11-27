@@ -10,9 +10,25 @@ copy the **Unreleased** notes into a section named after that exact version
 
 Nothing yet.
 
-## 0.7.456
+## 0.7.457
 
 ### Added
+
+- **Oh My Pi on your Claude and ChatGPT accounts, with an advisor.** Oh My Pi
+  now runs on the same provider accounts as Claude Code and Codex. It no
+  longer uses its own logins, models or configuration.
+  - Choose a Claude or GPT-6 model; the account picker follows the model's
+    provider. Model, thinking, advisor and account can change between turns.
+  - Pick an **Advisor**: a second model, on either provider, that reviews the
+    work and adds notes. Choose its thinking, and its account when it uses the
+    other provider.
+  - Claude logins need **Allow Oh My Pi to use this login** in **Settings ›
+    Providers** (or `dieter provider omp-access ACCOUNT on`). It is off by
+    default: Anthropic does not permit Claude.ai logins in third-party tools,
+    and accounts used this way may be blocked. Dieter hands Oh My Pi only
+    short-lived access tokens, and Claude Code keeps refreshing the login.
+  - See [Agents › Oh My Pi](https://getdieter.com/docs/harnesses/#oh-my-pi) and
+    [Providers › Oh My Pi access](https://getdieter.com/docs/providers/#oh-my-pi-access).
 
 - **A code reviewer for your agents.** Choose a reviewer once for your
   account: a harness, model and depth in **Settings › Code reviewer**, or with
@@ -30,6 +46,10 @@ Nothing yet.
     [Code review](https://getdieter.com/docs/code-review/).
 
 ### Changed
+
+- **Existing Oh My Pi conversations continue in a new Oh My Pi session.** Their
+  earlier turns stay in Dieter's transcript. Custom models from
+  `~/.omp/agent/models.yml` are no longer offered.
 
 - **The Mac and iOS apps are built with Xcode 27.2** and link the iOS and macOS
   27.2 SDKs. Supported systems are unchanged: iOS 18 and macOS 26 or later.
