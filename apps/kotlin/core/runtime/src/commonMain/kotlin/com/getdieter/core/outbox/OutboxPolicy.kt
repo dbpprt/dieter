@@ -330,6 +330,7 @@ object OutboxPolicy {
             vault_access = request.vault_access,
             mail_access = request.mail_access,
             code_review = request.code_review,
+            memory = request.memory == true,
             runtime = if (entry.state == OutboxState.OUTBOX_STATE_FAILED) "failed" else "pending",
             created_at = created,
             updated_at = created,

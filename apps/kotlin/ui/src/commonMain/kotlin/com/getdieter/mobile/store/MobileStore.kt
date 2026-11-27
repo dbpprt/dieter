@@ -67,6 +67,7 @@ class MobileStore(
     val devices: DevicesModel = DevicesModel(context)
     val providers: ProvidersModel = ProvidersModel(context)
     val codeReview: CodeReviewModel = CodeReviewModel(context)
+    val memory: MemoryModel = MemoryModel(context)
     val channels: ChannelsModel = ChannelsModel(context)
     val mail: MailModel = MailModel(context)
 

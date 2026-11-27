@@ -105,26 +105,29 @@ type Checkout struct {
 }
 
 type Project struct {
-	DeleteWorktreesOnArchive bool                       `json:"deleteWorktreesOnArchive,omitempty" yaml:"delete_worktrees_on_archive,omitempty"`
-	Checkouts                []Checkout                 `json:"checkouts" yaml:"-"`
-	ConflictKeys             []string                   `json:"conflictKeys,omitempty" yaml:"-"`
-	SharedBase               map[string]json.RawMessage `json:"-" yaml:"-"`
-	Hostnames                []string                   `json:"hostnames,omitempty" yaml:"hostnames,omitempty"`
-	ID                       string                     `json:"id" yaml:"id"`
-	Name                     string                     `json:"name" yaml:"name"`
-	Path                     string                     `json:"path" yaml:"path"`
-	Summary                  string                     `json:"summary,omitempty" yaml:"summary,omitempty"`
-	Prompt                   string                     `json:"prompt" yaml:"-"`
-	PromptTemplate           string                     `json:"promptTemplate,omitempty" yaml:"prompt_template,omitempty"`
-	Archived                 bool                       `json:"archived,omitempty" yaml:"archived,omitempty"`
-	CreatedAt                string                     `json:"createdAt" yaml:"created_at"`
-	UpdatedAt                string                     `json:"updatedAt" yaml:"updated_at"`
-	BoardCount               int                        `json:"boardCount,omitempty" yaml:"-"`
-	CardCount                int                        `json:"cardCount,omitempty" yaml:"-"`
-	ChatCount                int                        `json:"chatCount,omitempty" yaml:"-"`
-	BaseRemote               string                     `json:"baseRemote,omitempty" yaml:"base_remote,omitempty"`
-	BaseBranch               string                     `json:"baseBranch,omitempty" yaml:"base_branch,omitempty"`
-	ValidationCommands       []ValidationCommand        `json:"validationCommands,omitempty" yaml:"validation_commands,omitempty"`
+	DeleteWorktreesOnArchive bool `json:"deleteWorktreesOnArchive,omitempty" yaml:"delete_worktrees_on_archive,omitempty"`
+	// MemoryEnabled turns agent memory on for the project's conversations
+	// (replicated); new conversations take it as their default.
+	MemoryEnabled      bool                       `json:"memoryEnabled,omitempty" yaml:"memory_enabled,omitempty"`
+	Checkouts          []Checkout                 `json:"checkouts" yaml:"-"`
+	ConflictKeys       []string                   `json:"conflictKeys,omitempty" yaml:"-"`
+	SharedBase         map[string]json.RawMessage `json:"-" yaml:"-"`
+	Hostnames          []string                   `json:"hostnames,omitempty" yaml:"hostnames,omitempty"`
+	ID                 string                     `json:"id" yaml:"id"`
+	Name               string                     `json:"name" yaml:"name"`
+	Path               string                     `json:"path" yaml:"path"`
+	Summary            string                     `json:"summary,omitempty" yaml:"summary,omitempty"`
+	Prompt             string                     `json:"prompt" yaml:"-"`
+	PromptTemplate     string                     `json:"promptTemplate,omitempty" yaml:"prompt_template,omitempty"`
+	Archived           bool                       `json:"archived,omitempty" yaml:"archived,omitempty"`
+	CreatedAt          string                     `json:"createdAt" yaml:"created_at"`
+	UpdatedAt          string                     `json:"updatedAt" yaml:"updated_at"`
+	BoardCount         int                        `json:"boardCount,omitempty" yaml:"-"`
+	CardCount          int                        `json:"cardCount,omitempty" yaml:"-"`
+	ChatCount          int                        `json:"chatCount,omitempty" yaml:"-"`
+	BaseRemote         string                     `json:"baseRemote,omitempty" yaml:"base_remote,omitempty"`
+	BaseBranch         string                     `json:"baseBranch,omitempty" yaml:"base_branch,omitempty"`
+	ValidationCommands []ValidationCommand        `json:"validationCommands,omitempty" yaml:"validation_commands,omitempty"`
 }
 
 type ValidationCommand struct {
@@ -253,7 +256,14 @@ type Card struct {
 	MailAccess bool `json:"mailAccess,omitempty" yaml:"mail_access,omitempty"`
 	// CodeReview is owner-local and switchable at any time: agent turns of
 	// this conversation get Dieter's code reviewer (request_code_review).
-	CodeReview  bool                `json:"codeReview,omitempty" yaml:"code_review,omitempty"`
+	CodeReview bool `json:"codeReview,omitempty" yaml:"code_review,omitempty"`
+	// Memory is owner-local and switchable at any time: while the project has
+	// memory on, this conversation's turns are indexed and its agent gets
+	// memory_recall and memory_save.
+	Memory bool `json:"memory,omitempty" yaml:"memory,omitempty"`
+	// MemoryRole is "dreamer" for a dream conversation, fixed at creation by
+	// Dieter: its agent may change the project's saved memories.
+	MemoryRole  string              `json:"memoryRole,omitempty" yaml:"memory_role,omitempty"`
 	Workspace   *WorkspaceSummary   `json:"workspace,omitempty" yaml:"-"`
 	PullRequest *PullRequestSummary `json:"pullRequest,omitempty" yaml:"-"`
 }

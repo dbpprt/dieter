@@ -4,6 +4,8 @@ import com.getdieter.api.v1.Board
 import com.getdieter.api.v1.Card
 import com.getdieter.api.v1.HarnessCatalog
 import com.getdieter.api.v1.HarnessSelection
+import com.getdieter.api.v1.MemoryProjectStatus
+import com.getdieter.api.v1.MemorySettings
 import com.getdieter.api.v1.MessagePart
 import com.getdieter.api.v1.Project
 import com.getdieter.api.v1.QueuedMessage
@@ -68,7 +70,9 @@ import com.getdieter.core.client.rules.ScheduleExports
 import com.getdieter.core.client.rules.ScreenExports
 import com.getdieter.core.client.rules.TerminalExports
 import com.getdieter.core.client.rules.WorkspaceExports
+import com.getdieter.core.memory.MemoryForm
 import com.getdieter.core.presentation.MarkdownDiagrams
+import com.getdieter.core.providers.AgentAccountRules
 import com.getdieter.core.reviews.ReviewerForm
 import com.getdieter.core.screens.ScreenTrust
 import com.getdieter.core.screens.ScreenTrustException
@@ -300,6 +304,167 @@ object SharedRules {
 
     private fun harnesses(catalog: NSData) =
         HarnessCatalog.ADAPTER.decode(catalog.toByteArray()).harnesses
+
+    // --- Agent memory -------------------------------------------------------------
+
+    /**
+     * The machine the memory settings form reads and saves on, whose catalog its pickers show: of
+     * [machines] (encoded `MachineEntry`s in the session's order) this device's when it is
+     * available, else the first available one; "" while none is.
+     */
+    fun memoryMachine(machines: List<NSData>): String =
+        MemoryForm.machine(machineEntries(machines)).orEmpty()
+
+    /**
+     * [settings] (an encoded `dieter.v1.MemorySettings`) as the daemon stores a save: an empty
+     * agent, unset numbers and apply mode take their defaults; returns the encoded settings. A form
+     * starts from this so its steppers show real values.
+     */
+    fun memoryWithDefaults(settings: NSData): NSData =
+        MemorySettings.ADAPTER.encode(MemoryForm.withDefaults(memorySettings(settings))).toNSData()
+
+    /**
+     * The dreaming agent's pickers: [settings] is an encoded `dieter.v1.MemorySettings`, [catalog]
+     * the edited machine's encoded `dieter.v1.HarnessCatalog` (Strix left out), [providers] the
+     * last encoded `ProvidersSlice` (empty for none) whose accounts are judged on [daemonId], the
+     * setting's run-on machine (empty: any); returns an encoded `AgentControlsState` without
+     * provider options.
+     */
+    fun memoryAgentControls(
+        settings: NSData,
+        catalog: NSData,
+        providers: NSData,
+        daemonId: String,
+    ): NSData =
+        AgentControlsState.ADAPTER.encode(
+                MemoryForm.agent(
+                    memorySettings(settings),
+                    dreamers(catalog),
+                    memoryAccounts(providers, daemonId),
+                )
+            )
+            .toNSData()
+
+    /**
+     * [settings] after a picker's encoded `AgentChoice` [choice]: another agent takes its default
+     * model and effort and the provider default account, another model its default effort; returns
+     * an encoded `dieter.v1.MemorySettings`.
+     */
+    fun memoryChoosing(
+        settings: NSData,
+        catalog: NSData,
+        choice: NSData,
+        providers: NSData,
+        daemonId: String,
+    ): NSData =
+        MemorySettings.ADAPTER.encode(
+                MemoryForm.choosing(
+                    memorySettings(settings),
+                    dreamers(catalog),
+                    AgentChoice.ADAPTER.decode(choice.toByteArray()),
+                    memoryAccounts(providers, daemonId),
+                )
+            )
+            .toNSData()
+
+    /** "Dreaming off", else "Claude Code · opus · Review first". */
+    fun memoryStatus(settings: NSData, catalog: NSData): String =
+        MemoryForm.status(memorySettings(settings), dreamers(catalog))
+
+    /** Why [settings] cannot be saved, as the daemon would refuse them; "" when they can. */
+    fun memoryProblem(settings: NSData): String =
+        MemoryForm.problem(memorySettings(settings)).orEmpty()
+
+    /**
+     * The encoded [draft] differs from the encoded [saved] setting it was read from, or nobody
+     * saved one yet; false while nothing was read ([saved] empty).
+     */
+    fun memoryChanged(draft: NSData, saved: NSData): Boolean =
+        saved.length != 0UL && MemoryForm.changed(memorySettings(draft), memorySettings(saved))
+
+    /** Why [window] is not a start window; "" for "HH:MM-HH:MM" or empty (any time). */
+    fun memoryWindowProblem(window: String): String = MemoryForm.windowProblem(window).orEmpty()
+
+    /** "auto" and "review", in the order an apply picker shows them. */
+    fun memoryApplyModes(): List<String> = MemoryForm.APPLY_MODES
+
+    /** "Apply at once", "Review first". */
+    fun memoryApplyTitle(apply: String): String = MemoryForm.applyTitle(apply)
+
+    /** What an apply mode does, in one line. */
+    fun memoryApplyDetail(apply: String): String = MemoryForm.applyDetail(apply)
+
+    /** The run-on picker's machine IDs: "" (automatic) first, then [machines], then [runOn]. */
+    fun memoryRunOnIds(machines: List<NSData>, runOn: String): List<String> =
+        MemoryForm.runOnChoices(machineEntries(machines), runOn).map { it.first }
+
+    /** The run-on picker's title for [runOn]: "Automatic", or the machine's name. */
+    fun memoryRunOnTitle(machines: List<NSData>, runOn: String): String =
+        MemoryForm.runOnTitle(machineEntries(machines), runOn)
+
+    /** What the run-on choice means. */
+    fun memoryRunOnDetail(runOn: String): String = MemoryForm.runOnDetail(runOn)
+
+    /** The title of a form that shows the defaults nobody saved yet. */
+    fun memoryDefaultsLabel(): String = MemoryForm.DEFAULTS
+
+    /** The default start window, e.g. a text field's placeholder. */
+    fun memoryDefaultWindow(): String = MemoryForm.DEFAULT_WINDOW
+
+    /** The bounds of the setting's numbers. */
+    fun memoryMinHours(): Int = MemoryForm.MIN_HOURS.first
+
+    fun memoryMaxHours(): Int = MemoryForm.MIN_HOURS.last
+
+    fun memoryMinNewTasks(): Int = MemoryForm.MIN_NEW_TASKS.first
+
+    fun memoryMaxNewTasks(): Int = MemoryForm.MIN_NEW_TASKS.last
+
+    fun memoryMinOperations(): Int = MemoryForm.MAX_OPERATIONS.first
+
+    fun memoryMaxOperations(): Int = MemoryForm.MAX_OPERATIONS.last
+
+    fun memoryMinRetirePercent(): Int = MemoryForm.MAX_RETIRE_PERCENT.first
+
+    fun memoryMaxRetirePercent(): Int = MemoryForm.MAX_RETIRE_PERCENT.last
+
+    fun memoryMaxInstructionsBytes(): Int = MemoryForm.MAX_INSTRUCTIONS_BYTES
+
+    /**
+     * A project's memory in one line, from an encoded `dieter.v1.MemoryProjectStatus` [status] of
+     * the [machine] that answered: "12 conversations indexed on Studio · 5 saved memories".
+     */
+    fun memoryProjectSummary(status: NSData, machine: String): String =
+        MemoryForm.projectSummary(MemoryProjectStatus.ADAPTER.decode(status.toByteArray()), machine)
+
+    /**
+     * A project's dreams in one line: "Last dream 2d ago · Next dream in 5h"; [machines] (encoded
+     * `MachineEntry`s) name the machine dreams run on.
+     */
+    fun memoryProjectDreams(status: NSData, nowMillis: Long, machines: List<NSData>): String {
+        val names = machineEntries(machines).associate { it.id to it.display_name }
+        return MemoryForm.projectDreams(
+            MemoryProjectStatus.ADAPTER.decode(status.toByteArray()),
+            nowMillis,
+        ) { id ->
+            names[id]?.ifEmpty { null } ?: id
+        }
+    }
+
+    private fun memorySettings(data: NSData): MemorySettings =
+        MemorySettings.ADAPTER.decode(data.toByteArray())
+
+    private fun dreamers(catalog: NSData) = harnesses(catalog).filter { it.id != MemoryForm.STRIX }
+
+    private fun memoryAccounts(providers: NSData, daemonId: String) =
+        AgentAccountRules.fromSlice(
+            ProvidersSlice.ADAPTER.decode(providers.toByteArray()),
+            daemonId,
+        )
+
+    private fun machineEntries(machines: List<NSData>): List<MachineEntry> = machines.map {
+        MachineEntry.ADAPTER.decode(it.toByteArray())
+    }
 
     // --- Files --------------------------------------------------------------------
 

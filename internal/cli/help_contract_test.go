@@ -66,6 +66,10 @@ var rpcCommand = map[string]string{
 	"ConsumeProviderUsageReset": "provider reset", "GetProviderTurnToken": "provider token",
 	"GetReviewerSettings": "reviewer show", "UpdateReviewerSettings": "reviewer update", "SetCardCodeReview": "card reviewer",
 	"StartCodeReview": "card review", "GetCodeReview": "card reviews", "ListCodeReviews": "card reviews",
+	"GetMemoryStatus": "memory status", "SearchMemory": "memory search", "SaveMemory": "memory save", "ForgetMemory": "memory forget",
+	"ReindexMemory": "memory reindex", "SetCardMemory": "card memory", "GetMemorySettings": "memory settings show",
+	"UpdateMemorySettings": "memory settings update", "StartMemoryDream": "memory dream start", "ListMemoryDreams": "memory dream list",
+	"ApplyMemoryDream": "memory dream apply", "DiscardMemoryDream": "memory dream discard", "UndoMemoryDream": "memory dream undo",
 }
 
 func TestEveryDaemonRPCMapsToCLICommand(t *testing.T) {

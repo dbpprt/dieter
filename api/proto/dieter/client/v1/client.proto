@@ -15,6 +15,7 @@ import "dieter/v1/folders.proto";
 import "dieter/v1/git.proto";
 import "dieter/v1/machine.proto";
 import "dieter/v1/mail.proto";
+import "dieter/v1/memory.proto";
 import "dieter/v1/projects.proto";
 import "dieter/v1/reviews.proto";
 import "dieter/v1/schedules.proto";
@@ -117,6 +118,8 @@ message Command {
     ProvidersCommand providers = 87;
     // The code reviewer; see CodeReviewCommand.
     CodeReviewCommand code_review = 88;
+    // Agent memory; see MemoryCommand.
+    MemoryCommand memory = 89;
   }
   reserved 66;
   reserved "quotas";
@@ -162,6 +165,78 @@ message CodeReviewStart {
   string focus = 2;
   // "quick" or "thorough"; empty uses the setting.
   string depth = 3;
+}
+
+// Agent memory: the account's memory setting, a project's memory state and
+// dreams, a conversation's switch, and a dream conversation's review. A
+// project's switch is AdminUpdateProject.memory_enabled; a conversation's
+// memory and its dream show in ConversationState.memory.
+message MemoryCommand {
+  oneof action {
+    // Reads the memory setting from the machine (empty: the local or first
+    // online machine); the result is memory_settings.
+    MemoryMachine settings = 1;
+    // Saves the memory setting (compare-and-set on settings.revision); the
+    // result is memory_settings.
+    MemorySettingsUpdate update_settings = 2;
+    // Switches a conversation's memory on its machine; the result is the
+    // card.
+    MemorySwitch set_enabled = 3;
+    // Reads a project's memory state from the machine that dreams for it,
+    // else one with the project; the result is memory_status.
+    MemoryProjectRef status = 4;
+    // Starts a dream of a project now on that machine; the result is
+    // memory_dream (running, or failed with its error).
+    MemoryProjectRef start_dream = 5;
+    // Reads a dream conversation's dream from its machine; the result is
+    // memory_dream.
+    MemoryCardRef dream = 6;
+    // Applies, discards or undoes a dream on its conversation's machine; the
+    // result is memory_dream.
+    MemoryCardRef apply_dream = 7;
+    MemoryCardRef discard_dream = 8;
+    MemoryCardRef undo_dream = 9;
+  }
+}
+
+message MemoryMachine { string daemon_id = 1; }
+
+message MemorySettingsUpdate {
+  string daemon_id = 1;
+  dieter.v1.MemorySettings settings = 2;
+}
+
+message MemorySwitch {
+  string card_id = 1;
+  bool enabled = 2;
+}
+
+message MemoryProjectRef { string project_id = 1; }
+
+message MemoryCardRef { string card_id = 1; }
+
+// A dream as its conversation's banner shows it, laid out by the core.
+message MemoryDreamState {
+  string card_id = 1;
+  // "running", "staged", "applied", "discarded", "undone", "empty" or
+  // "failed".
+  string status = 2;
+  bool running = 3;
+  // "Dreaming…", "Dream awaiting review", "Dream applied", ...
+  string title = 4;
+  // "2 added · 1 merged · 3 verified"; "No changes" for an empty dream;
+  // empty while it runs without changes.
+  string counts_label = 5;
+  // What the actions do now, e.g. "Apply the changes or discard them.".
+  string detail = 6;
+  // The actions that apply to the status.
+  bool can_apply = 7;
+  bool can_discard = 8;
+  bool can_undo = 9;
+  // Why a failed dream failed.
+  string error = 10;
+  // The dream as its machine reported it.
+  dieter.v1.MemoryDream dream = 11;
 }
 
 // Turns a surface's mode on or off.
@@ -598,6 +673,10 @@ message CreationIntent {
   // Switchable later (CodeReviewCommand.set_enabled); never remembered
   // between forms.
   bool code_review = 17;
+  // Agent memory for the conversation. The preview sets the project's
+  // default; absent while the project has memory off. Switchable later
+  // (MemoryCommand.set_enabled); never remembered between forms.
+  optional bool memory = 18;
 }
 
 // Binds a creation form's surface (SLICE_CREATION_PREVIEW, observed with a
@@ -653,6 +732,8 @@ message CreationPreview {
   // The workspace mode's description, e.g. "Create a new isolated Git
   // worktree and branch for this conversation."
   string workspace_detail = 14;
+  // The project has agent memory on: the form shows intent.memory's switch.
+  bool memory_available = 15;
 }
 
 // ---------------------------------------------------------------------------
@@ -1361,6 +1442,12 @@ message Result {
     dieter.v1.ReviewerSettings reviewer_settings = 59;
     // A review a CodeReviewCommand.start started.
     dieter.v1.CodeReview code_review = 60;
+    // The memory setting (MemoryCommand.settings, update_settings).
+    dieter.v1.MemorySettings memory_settings = 61;
+    // A project's memory state (MemoryCommand.status).
+    dieter.v1.MemoryStatus memory_status = 62;
+    // A dream a MemoryCommand started, read or changed.
+    MemoryDreamState memory_dream = 63;
   }
 }
 
@@ -1915,6 +2002,9 @@ message ConversationState {
   // The conversation's code reviewer. Unset until the conversation's card is
   // known.
   ConversationCodeReview code_review = 33;
+  // The conversation's agent memory. Unset until the conversation's card is
+  // known.
+  ConversationMemory memory = 34;
 }
 
 // A conversation's code reviewer, for its header switch and the Changes
@@ -1930,6 +2020,21 @@ message ConversationCodeReview {
   bool can_start = 4;
   // The latest review, when there is one.
   TimelineCodeReview latest = 5;
+}
+
+// A conversation's agent memory, for its switch and a dream's banner.
+message ConversationMemory {
+  // The agent recalls and saves memories from its next turn.
+  bool enabled = 1;
+  // The switch shows: the project has memory on and this is not a dream.
+  bool shown = 2;
+  // The switch can change it: shown, and the conversation is known and not
+  // archived.
+  bool can_toggle = 3;
+  // A dream conversation (Card.memory_role "dreamer"); it always has memory.
+  bool dreamer = 4;
+  // A dream conversation's dream; unset until its machine reported it.
+  MemoryDreamState dream = 5;
 }
 
 message ProviderNotice {
@@ -3326,6 +3431,8 @@ message AdminCreateProject {
 
 message AdminUpdateProject {
   optional bool delete_worktrees_on_archive = 7;
+  // Agent memory for the project's conversations; absent preserves it.
+  optional bool memory_enabled = 8;
   string project_id = 1;
   optional string name = 2;
   optional string summary = 3;

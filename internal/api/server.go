@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	hostfolders "github.com/dbpprt/dieter/internal/host/folders"
+	hostmemory "github.com/dbpprt/dieter/internal/host/memory"
 	"log/slog"
 	"net/http"
 	"path/filepath"
@@ -79,6 +80,7 @@ type Server struct {
 	machineOperationOrder   []string
 	pendingMachineOperation string
 	folders                 *hostfolders.Engine
+	memory                  *hostmemory.Service
 }
 
 // Options provides explicit seams for the daemon composition root and native
@@ -119,6 +121,9 @@ type Options struct {
 	// Accounts is the provider accounts engine; nil serves no
 	// ProviderAccountService calls.
 	Accounts *accounts.Service
+	// Memory is agent memory; nil selects a service that is never run
+	// (requests work, nothing is indexed in the background).
+	Memory *hostmemory.Service
 }
 
 func New(data *store.Store, logger *slog.Logger) *Server {
@@ -154,6 +159,15 @@ func NewWithOptions(data *store.Store, logger *slog.Logger, options Options) *Se
 	}
 	if s.daemonState == nil {
 		s.daemonState = daemonstate.New(data)
+	}
+	s.memory = options.Memory
+	if s.memory == nil {
+		s.memory = hostmemory.New(hostmemory.Options{Store: data, App: service, Log: logger})
+	}
+	if service.Memory == nil {
+		// Turns answer memory calls and settle dreams; indexing waits for
+		// the service's Run (dieter serve).
+		service.Memory = s.memory
 	}
 	s.folders = options.Folders
 	if s.folders == nil {

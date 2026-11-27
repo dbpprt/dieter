@@ -89,6 +89,19 @@ invariant, it is named; keep it passing rather than weakening it.
   vault or mail; its findings reach the user and the agent and never approve,
   merge or move anything. The reviewer setting is one replicated KV record that
   only daemons write (`internal/engine/reviewer`, `ReviewService`).
+- Agent memory is off until a person turns it on for a project. Each daemon
+  indexes only the memory-enabled conversations it owns into
+  `DIETER_HOME/memory/memory.db`, a derived index that is never replicated and
+  that a reindex rebuilds; secrets and `<private>` blocks are scrubbed before
+  indexing. Recall asks other daemons only over the roster-pinned peer
+  carriers, bounded (8 peers, 3 s), and names the ones that did not answer.
+  Saved memories are KV records in the namespace `memory` that only daemons
+  write (`internal/host/memory`, `MemoryService`). Agent turns recall and save
+  only in their own conversation's project; forgetting, reindexing, switches,
+  the memory setting and dreams belong to people. A dream is a visible
+  conversation with the fixed role `dreamer`, set only by Dieter at creation;
+  only its turns get `memory_apply`, whose batch is validated all or nothing
+  and can be undone. The board label Memory grants nothing.
 - Permit concurrent agent turns in the same registered checkout. There are no
   global, harness or board parallel-session caps. Runtime leases enforce at most
   one active turn per conversation across API, CLI and scheduled starts.

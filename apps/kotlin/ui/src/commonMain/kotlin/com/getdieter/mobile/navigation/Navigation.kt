@@ -199,6 +199,11 @@ sealed class MobileRoute {
         override val key = "code-reviewer"
     }
 
+    /** Settings › Agent memory: the account's memory and dreaming setting. */
+    data object AgentMemory : MobileRoute() {
+        override val key = "agent-memory"
+    }
+
     /** Creates a folder or joins one, presented modally; [folderId] preselects one to join. */
     data class AddFolder(val folderId: String = "") : MobileRoute() {
         override val key = "add-folder/$folderId"

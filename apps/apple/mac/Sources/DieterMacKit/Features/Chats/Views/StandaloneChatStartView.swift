@@ -307,6 +307,21 @@ struct StandaloneChatStartView: View {
                 .accessibilityIdentifier("code-review")
                 .accessibilityValue(form.intent.codeReview ? "On" : "Off")
                 .e2eTarget("code-review")
+                // Agent memory shows only for projects that have it on.
+                if preview.memoryAvailable {
+                    Toggle(isOn: $form.memory) {
+                        Label("Memory", systemImage: "clock.arrow.circlepath")
+                    }
+                    .toggleStyle(.button)
+                    .help(
+                        "Let this chat's agent recall what earlier conversations of the project found and save "
+                            + "what it learns. Switch it later from the chat's menu."
+                    )
+                    .accessibilityLabel("Agent memory")
+                    .accessibilityIdentifier("memory")
+                    .accessibilityValue(form.memory ? "On" : "Off")
+                    .e2eTarget("memory")
+                }
                 Spacer(minLength: 0)
             }
             .font(.system(size: 11, weight: .medium))

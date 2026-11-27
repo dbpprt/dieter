@@ -402,27 +402,31 @@ func (x *Checkout) GetValidationCommands() []*ValidationCommand {
 type Project struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Opt-in archive cleanup retains branches and history; ignored files are deleted.
-	DeleteWorktreesOnArchive bool                 `protobuf:"varint,20,opt,name=delete_worktrees_on_archive,json=deleteWorktreesOnArchive,proto3" json:"delete_worktrees_on_archive,omitempty"`
-	Checkouts                []*Checkout          `protobuf:"bytes,18,rep,name=checkouts,proto3" json:"checkouts,omitempty"`
-	ConflictKeys             []string             `protobuf:"bytes,19,rep,name=conflict_keys,json=conflictKeys,proto3" json:"conflict_keys,omitempty"`
-	Id                       string               `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name                     string               `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Path                     string               `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
-	Summary                  string               `protobuf:"bytes,4,opt,name=summary,proto3" json:"summary,omitempty"`
-	Prompt                   string               `protobuf:"bytes,5,opt,name=prompt,proto3" json:"prompt,omitempty"`
-	Archived                 bool                 `protobuf:"varint,6,opt,name=archived,proto3" json:"archived,omitempty"`
-	CreatedAt                string               `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt                string               `protobuf:"bytes,8,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	BoardCount               int32                `protobuf:"varint,9,opt,name=board_count,json=boardCount,proto3" json:"board_count,omitempty"`
-	CardCount                int32                `protobuf:"varint,10,opt,name=card_count,json=cardCount,proto3" json:"card_count,omitempty"`
-	ChatCount                int32                `protobuf:"varint,11,opt,name=chat_count,json=chatCount,proto3" json:"chat_count,omitempty"`
-	PromptTemplate           string               `protobuf:"bytes,12,opt,name=prompt_template,json=promptTemplate,proto3" json:"prompt_template,omitempty"`
-	BaseRemote               string               `protobuf:"bytes,14,opt,name=base_remote,json=baseRemote,proto3" json:"base_remote,omitempty"`
-	BaseBranch               string               `protobuf:"bytes,15,opt,name=base_branch,json=baseBranch,proto3" json:"base_branch,omitempty"`
-	ValidationCommands       []*ValidationCommand `protobuf:"bytes,16,rep,name=validation_commands,json=validationCommands,proto3" json:"validation_commands,omitempty"`
-	Hostnames                []string             `protobuf:"bytes,17,rep,name=hostnames,proto3" json:"hostnames,omitempty"`
-	unknownFields            protoimpl.UnknownFields
-	sizeCache                protoimpl.SizeCache
+	DeleteWorktreesOnArchive bool `protobuf:"varint,20,opt,name=delete_worktrees_on_archive,json=deleteWorktreesOnArchive,proto3" json:"delete_worktrees_on_archive,omitempty"`
+	// Agent memory: finished turns of this project's memory-enabled
+	// conversations are indexed and their agents recall and save memories
+	// (MemoryService). New conversations take it as their default.
+	MemoryEnabled      bool                 `protobuf:"varint,21,opt,name=memory_enabled,json=memoryEnabled,proto3" json:"memory_enabled,omitempty"`
+	Checkouts          []*Checkout          `protobuf:"bytes,18,rep,name=checkouts,proto3" json:"checkouts,omitempty"`
+	ConflictKeys       []string             `protobuf:"bytes,19,rep,name=conflict_keys,json=conflictKeys,proto3" json:"conflict_keys,omitempty"`
+	Id                 string               `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name               string               `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Path               string               `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
+	Summary            string               `protobuf:"bytes,4,opt,name=summary,proto3" json:"summary,omitempty"`
+	Prompt             string               `protobuf:"bytes,5,opt,name=prompt,proto3" json:"prompt,omitempty"`
+	Archived           bool                 `protobuf:"varint,6,opt,name=archived,proto3" json:"archived,omitempty"`
+	CreatedAt          string               `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt          string               `protobuf:"bytes,8,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	BoardCount         int32                `protobuf:"varint,9,opt,name=board_count,json=boardCount,proto3" json:"board_count,omitempty"`
+	CardCount          int32                `protobuf:"varint,10,opt,name=card_count,json=cardCount,proto3" json:"card_count,omitempty"`
+	ChatCount          int32                `protobuf:"varint,11,opt,name=chat_count,json=chatCount,proto3" json:"chat_count,omitempty"`
+	PromptTemplate     string               `protobuf:"bytes,12,opt,name=prompt_template,json=promptTemplate,proto3" json:"prompt_template,omitempty"`
+	BaseRemote         string               `protobuf:"bytes,14,opt,name=base_remote,json=baseRemote,proto3" json:"base_remote,omitempty"`
+	BaseBranch         string               `protobuf:"bytes,15,opt,name=base_branch,json=baseBranch,proto3" json:"base_branch,omitempty"`
+	ValidationCommands []*ValidationCommand `protobuf:"bytes,16,rep,name=validation_commands,json=validationCommands,proto3" json:"validation_commands,omitempty"`
+	Hostnames          []string             `protobuf:"bytes,17,rep,name=hostnames,proto3" json:"hostnames,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *Project) Reset() {
@@ -458,6 +462,13 @@ func (*Project) Descriptor() ([]byte, []int) {
 func (x *Project) GetDeleteWorktreesOnArchive() bool {
 	if x != nil {
 		return x.DeleteWorktreesOnArchive
+	}
+	return false
+}
+
+func (x *Project) GetMemoryEnabled() bool {
+	if x != nil {
+		return x.MemoryEnabled
 	}
 	return false
 }
@@ -1245,7 +1256,13 @@ type Card struct {
 	ProviderAccountId string `protobuf:"bytes,49,opt,name=provider_account_id,json=providerAccountId,proto3" json:"provider_account_id,omitempty"`
 	// Agent turns get Dieter's code reviewer (ReviewService): owner-local,
 	// switchable at any time, effective from the next turn.
-	CodeReview    bool `protobuf:"varint,50,opt,name=code_review,json=codeReview,proto3" json:"code_review,omitempty"`
+	CodeReview bool `protobuf:"varint,50,opt,name=code_review,json=codeReview,proto3" json:"code_review,omitempty"`
+	// Agent memory (MemoryService): owner-local, switchable at any time,
+	// effective from the next turn; only while the project has memory on.
+	Memory bool `protobuf:"varint,51,opt,name=memory,proto3" json:"memory,omitempty"`
+	// "dreamer" for a dream conversation (fixed at creation by Dieter): its
+	// agent may change the project's saved memories with memory_apply.
+	MemoryRole    string `protobuf:"bytes,52,opt,name=memory_role,json=memoryRole,proto3" json:"memory_role,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1614,6 +1631,20 @@ func (x *Card) GetCodeReview() bool {
 		return x.CodeReview
 	}
 	return false
+}
+
+func (x *Card) GetMemory() bool {
+	if x != nil {
+		return x.Memory
+	}
+	return false
+}
+
+func (x *Card) GetMemoryRole() string {
+	if x != nil {
+		return x.MemoryRole
+	}
+	return ""
 }
 
 type CardOrigin struct {
@@ -5129,9 +5160,10 @@ const file_dieter_v1_common_proto_rawDesc = "" +
 	"\x04name\x18\x04 \x01(\tR\x04name\x12\x12\n" +
 	"\x04path\x18\x05 \x01(\tR\x04path\x12\x1a\n" +
 	"\bdetached\x18\x06 \x01(\bR\bdetached\x12M\n" +
-	"\x13validation_commands\x18\a \x03(\v2\x1c.dieter.v1.ValidationCommandR\x12validationCommands\"\xb9\x05\n" +
+	"\x13validation_commands\x18\a \x03(\v2\x1c.dieter.v1.ValidationCommandR\x12validationCommands\"\xe0\x05\n" +
 	"\aProject\x12=\n" +
-	"\x1bdelete_worktrees_on_archive\x18\x14 \x01(\bR\x18deleteWorktreesOnArchive\x121\n" +
+	"\x1bdelete_worktrees_on_archive\x18\x14 \x01(\bR\x18deleteWorktreesOnArchive\x12%\n" +
+	"\x0ememory_enabled\x18\x15 \x01(\bR\rmemoryEnabled\x121\n" +
 	"\tcheckouts\x18\x12 \x03(\v2\x13.dieter.v1.CheckoutR\tcheckouts\x12#\n" +
 	"\rconflict_keys\x18\x13 \x03(\tR\fconflictKeys\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
@@ -5221,7 +5253,7 @@ const file_dieter_v1_common_proto_rawDesc = "" +
 	"\x0eCardStateField\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
 	"\brevision\x18\x02 \x01(\tR\brevision\x127\n" +
-	"\bversions\x18\x03 \x03(\v2\x1b.dieter.v1.CardStateVersionR\bversions\"\xc7\x0f\n" +
+	"\bversions\x18\x03 \x03(\v2\x1b.dieter.v1.CardStateVersionR\bversions\"\x80\x10\n" +
 	"\x04Card\x12<\n" +
 	"\fstate_fields\x18. \x03(\v2\x19.dieter.v1.CardStateFieldR\vstateFields\x12&\n" +
 	"\x0fowner_daemon_id\x18& \x01(\tR\rownerDaemonId\x12\x1f\n" +
@@ -5278,7 +5310,10 @@ const file_dieter_v1_common_proto_rawDesc = "" +
 	"mailAccess\x12.\n" +
 	"\x13provider_account_id\x181 \x01(\tR\x11providerAccountId\x12\x1f\n" +
 	"\vcode_review\x182 \x01(\bR\n" +
-	"codeReview\x1aB\n" +
+	"codeReview\x12\x16\n" +
+	"\x06memory\x183 \x01(\bR\x06memory\x12\x1f\n" +
+	"\vmemory_role\x184 \x01(\tR\n" +
+	"memoryRole\x1aB\n" +
 	"\x14ProviderOptionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x18\x10\x19J\x04\b%\x10&R\x14provider_account_key\"\x8e\x01\n" +

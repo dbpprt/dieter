@@ -71,6 +71,8 @@ message CreateConversationRequest {
   string account_id = 27;
   // Give this conversation's agent turns the code reviewer (ReviewService).
   bool code_review = 28;
+  // Agent memory for this conversation; absent follows the project.
+  optional bool memory = 29;
 }
 
 message ListChatsRequest {

@@ -168,6 +168,31 @@ internal constructor(
         }
     }
 
+    /** Switches the open conversation's agent memory; it applies from the next turn. */
+    fun setMemory(enabled: Boolean) {
+        val id = selectedCard.value
+        context.action {
+            context.core.dispatch(
+                Command(memory = MemoryCommand(set_enabled = MemorySwitch(id, enabled)))
+            )
+        }
+    }
+
+    /** Applies the open dream conversation's staged changes. */
+    fun applyDream() = dream { MemoryCommand(apply_dream = MemoryCardRef(it)) }
+
+    /** Discards the open dream conversation's staged changes. */
+    fun discardDream() = dream { MemoryCommand(discard_dream = MemoryCardRef(it)) }
+
+    /** Restores the memories the open dream conversation changed. */
+    fun undoDream() = dream { MemoryCommand(undo_dream = MemoryCardRef(it)) }
+
+    /** Runs a dream action on the open conversation; the core shows its result in the banner. */
+    private fun dream(command: (String) -> MemoryCommand) {
+        val id = selectedCard.value
+        context.action { context.core.dispatch(Command(memory = command(id))) }
+    }
+
     /** Asks the reviewer to review the open conversation's changes now. */
     fun reviewChanges() {
         val id = selectedCard.value

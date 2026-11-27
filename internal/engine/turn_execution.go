@@ -84,6 +84,9 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 	if detail.Card.CodeReview && request.Adapter != strixAdapter {
 		s.enableCodeReview(detail, turnID, &request)
 	}
+	if s.Memory != nil && MemoryActive(detail.Project, detail.Card, request.Adapter) {
+		s.enableMemory(detail, turnID, &request)
+	}
 	s.channelTurnBegin(detail, turnID, &request)
 	finished := false
 	finish := func(startQueued bool, finalCache kanban.CardCacheInput) error {
@@ -110,7 +113,10 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 				s.channelTurnEnd(detail.Card.ID)
 			}()
 		}
+		// A turn that reached its end (not a restart suspension) is indexed
+		// when the conversation uses memory.
 		if startQueued {
+			s.memoryTurnFinished(detail, request.Adapter)
 			s.startNextQueued(detail.Card.ID)
 		}
 		return updateErr

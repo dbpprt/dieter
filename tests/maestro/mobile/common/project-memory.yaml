@@ -1,0 +1,20 @@
+# Switches the open project's Agent memory in its settings and saves them.
+appId: ${APP_ID}
+---
+- tapOn:
+    id: chrome-project-menu
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    text: "Edit project.*"
+    waitToSettleTimeoutMs: 500
+- scrollUntilVisible:
+    element:
+      id: project-memory
+    direction: DOWN
+    timeout: 20000
+- tapOn:
+    id: project-memory
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    id: "chrome-save-project|sheet-save-project"
+    waitToSettleTimeoutMs: 500

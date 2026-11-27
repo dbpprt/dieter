@@ -353,6 +353,7 @@ func protoOwnedCard(card model.Card) *dieterv1.Card {
 		ProviderOptions: full.ProviderOptions, ProviderAccountId: full.ProviderAccountId,
 		WorkspaceMode: full.WorkspaceMode, WorkspaceBranch: full.WorkspaceBranch, WorkspaceBaseBranch: full.WorkspaceBaseBranch,
 		WorkspaceBaseRemote: full.WorkspaceBaseRemote, RemotePublishMode: full.RemotePublishMode, VaultAccess: full.VaultAccess, MailAccess: full.MailAccess, CodeReview: full.CodeReview,
+		Memory: full.Memory, MemoryRole: full.MemoryRole,
 		Workspace: full.Workspace, PullRequest: full.PullRequest, TokenUsage: full.TokenUsage, UpdatedAt: full.UpdatedAt,
 	}
 }

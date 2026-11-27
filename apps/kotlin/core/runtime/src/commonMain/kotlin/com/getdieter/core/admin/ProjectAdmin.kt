@@ -101,10 +101,12 @@ internal constructor(
         prompt: String? = null,
         hostnames: List<String>? = null,
         deleteWorktreesOnArchive: Boolean? = null,
+        memoryEnabled: Boolean? = null,
     ): Project {
         val request =
             UpdateProjectRequest(
                 delete_worktrees_on_archive = deleteWorktreesOnArchive,
+                memory_enabled = memoryEnabled,
                 project_id = projectId,
                 name = name?.trim()?.ifEmpty { null },
                 summary = summary,

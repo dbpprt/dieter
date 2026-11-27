@@ -2302,6 +2302,15 @@ public nonisolated struct ClientCommand: Sendable {
     set {command = .codeReview(newValue)}
   }
 
+  /// Agent memory; see MemoryCommand.
+  public var memory: ClientMemoryCommand {
+    get {
+      if case .memory(let v)? = command {return v}
+      return ClientMemoryCommand()
+    }
+    set {command = .memory(newValue)}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Command: Equatable, Sendable {
@@ -2390,6 +2399,8 @@ public nonisolated struct ClientCommand: Sendable {
     case providers(ClientProvidersCommand)
     /// The code reviewer; see CodeReviewCommand.
     case codeReview(ClientCodeReviewCommand)
+    /// Agent memory; see MemoryCommand.
+    case memory(ClientMemoryCommand)
 
   }
 
@@ -2542,6 +2553,292 @@ public nonisolated struct ClientCodeReviewStart: Sendable {
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
+}
+
+/// Agent memory: the account's memory setting, a project's memory state and
+/// dreams, a conversation's switch, and a dream conversation's review. A
+/// project's switch is AdminUpdateProject.memory_enabled; a conversation's
+/// memory and its dream show in ConversationState.memory.
+public nonisolated struct ClientMemoryCommand: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var action: ClientMemoryCommand.OneOf_Action? = nil
+
+  /// Reads the memory setting from the machine (empty: the local or first
+  /// online machine); the result is memory_settings.
+  public var settings: ClientMemoryMachine {
+    get {
+      if case .settings(let v)? = action {return v}
+      return ClientMemoryMachine()
+    }
+    set {action = .settings(newValue)}
+  }
+
+  /// Saves the memory setting (compare-and-set on settings.revision); the
+  /// result is memory_settings.
+  public var updateSettings: ClientMemorySettingsUpdate {
+    get {
+      if case .updateSettings(let v)? = action {return v}
+      return ClientMemorySettingsUpdate()
+    }
+    set {action = .updateSettings(newValue)}
+  }
+
+  /// Switches a conversation's memory on its machine; the result is the
+  /// card.
+  public var setEnabled: ClientMemorySwitch {
+    get {
+      if case .setEnabled(let v)? = action {return v}
+      return ClientMemorySwitch()
+    }
+    set {action = .setEnabled(newValue)}
+  }
+
+  /// Reads a project's memory state from the machine that dreams for it,
+  /// else one with the project; the result is memory_status.
+  public var status: ClientMemoryProjectRef {
+    get {
+      if case .status(let v)? = action {return v}
+      return ClientMemoryProjectRef()
+    }
+    set {action = .status(newValue)}
+  }
+
+  /// Starts a dream of a project now on that machine; the result is
+  /// memory_dream (running, or failed with its error).
+  public var startDream: ClientMemoryProjectRef {
+    get {
+      if case .startDream(let v)? = action {return v}
+      return ClientMemoryProjectRef()
+    }
+    set {action = .startDream(newValue)}
+  }
+
+  /// Reads a dream conversation's dream from its machine; the result is
+  /// memory_dream.
+  public var dream: ClientMemoryCardRef {
+    get {
+      if case .dream(let v)? = action {return v}
+      return ClientMemoryCardRef()
+    }
+    set {action = .dream(newValue)}
+  }
+
+  /// Applies, discards or undoes a dream on its conversation's machine; the
+  /// result is memory_dream.
+  public var applyDream: ClientMemoryCardRef {
+    get {
+      if case .applyDream(let v)? = action {return v}
+      return ClientMemoryCardRef()
+    }
+    set {action = .applyDream(newValue)}
+  }
+
+  public var discardDream: ClientMemoryCardRef {
+    get {
+      if case .discardDream(let v)? = action {return v}
+      return ClientMemoryCardRef()
+    }
+    set {action = .discardDream(newValue)}
+  }
+
+  public var undoDream: ClientMemoryCardRef {
+    get {
+      if case .undoDream(let v)? = action {return v}
+      return ClientMemoryCardRef()
+    }
+    set {action = .undoDream(newValue)}
+  }
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public nonisolated enum OneOf_Action: Equatable, Sendable {
+    /// Reads the memory setting from the machine (empty: the local or first
+    /// online machine); the result is memory_settings.
+    case settings(ClientMemoryMachine)
+    /// Saves the memory setting (compare-and-set on settings.revision); the
+    /// result is memory_settings.
+    case updateSettings(ClientMemorySettingsUpdate)
+    /// Switches a conversation's memory on its machine; the result is the
+    /// card.
+    case setEnabled(ClientMemorySwitch)
+    /// Reads a project's memory state from the machine that dreams for it,
+    /// else one with the project; the result is memory_status.
+    case status(ClientMemoryProjectRef)
+    /// Starts a dream of a project now on that machine; the result is
+    /// memory_dream (running, or failed with its error).
+    case startDream(ClientMemoryProjectRef)
+    /// Reads a dream conversation's dream from its machine; the result is
+    /// memory_dream.
+    case dream(ClientMemoryCardRef)
+    /// Applies, discards or undoes a dream on its conversation's machine; the
+    /// result is memory_dream.
+    case applyDream(ClientMemoryCardRef)
+    case discardDream(ClientMemoryCardRef)
+    case undoDream(ClientMemoryCardRef)
+
+  }
+
+  public init() {}
+}
+
+public nonisolated struct ClientMemoryMachine: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var daemonID: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct ClientMemorySettingsUpdate: @unchecked Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var daemonID: String {
+    get {_storage._daemonID}
+    set {_uniqueStorage()._daemonID = newValue}
+  }
+
+  public var settings: DieterAPI.Dieter_V1_MemorySettings {
+    get {_storage._settings ?? DieterAPI.Dieter_V1_MemorySettings()}
+    set {_uniqueStorage()._settings = newValue}
+  }
+  /// Returns true if `settings` has been explicitly set.
+  public var hasSettings: Bool {_storage._settings != nil}
+  /// Clears the value of `settings`. Subsequent reads from it will return its default value.
+  public mutating func clearSettings() {_uniqueStorage()._settings = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _storage = _StorageClass.defaultInstance
+}
+
+public nonisolated struct ClientMemorySwitch: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var cardID: String = String()
+
+  public var enabled: Bool = false
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct ClientMemoryProjectRef: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var projectID: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct ClientMemoryCardRef: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var cardID: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+/// A dream as its conversation's banner shows it, laid out by the core.
+public nonisolated struct ClientMemoryDreamState: @unchecked Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var cardID: String {
+    get {_storage._cardID}
+    set {_uniqueStorage()._cardID = newValue}
+  }
+
+  /// "running", "staged", "applied", "discarded", "undone", "empty" or
+  /// "failed".
+  public var status: String {
+    get {_storage._status}
+    set {_uniqueStorage()._status = newValue}
+  }
+
+  public var running: Bool {
+    get {_storage._running}
+    set {_uniqueStorage()._running = newValue}
+  }
+
+  /// "Dreaming…", "Dream awaiting review", "Dream applied", ...
+  public var title: String {
+    get {_storage._title}
+    set {_uniqueStorage()._title = newValue}
+  }
+
+  /// "2 added · 1 merged · 3 verified"; "No changes" for an empty dream;
+  /// empty while it runs without changes.
+  public var countsLabel: String {
+    get {_storage._countsLabel}
+    set {_uniqueStorage()._countsLabel = newValue}
+  }
+
+  /// What the actions do now, e.g. "Apply the changes or discard them.".
+  public var detail: String {
+    get {_storage._detail}
+    set {_uniqueStorage()._detail = newValue}
+  }
+
+  /// The actions that apply to the status.
+  public var canApply: Bool {
+    get {_storage._canApply}
+    set {_uniqueStorage()._canApply = newValue}
+  }
+
+  public var canDiscard: Bool {
+    get {_storage._canDiscard}
+    set {_uniqueStorage()._canDiscard = newValue}
+  }
+
+  public var canUndo: Bool {
+    get {_storage._canUndo}
+    set {_uniqueStorage()._canUndo = newValue}
+  }
+
+  /// Why a failed dream failed.
+  public var error: String {
+    get {_storage._error}
+    set {_uniqueStorage()._error = newValue}
+  }
+
+  /// The dream as its machine reported it.
+  public var dream: DieterAPI.Dieter_V1_MemoryDream {
+    get {_storage._dream ?? DieterAPI.Dieter_V1_MemoryDream()}
+    set {_uniqueStorage()._dream = newValue}
+  }
+  /// Returns true if `dream` has been explicitly set.
+  public var hasDream: Bool {_storage._dream != nil}
+  /// Clears the value of `dream`. Subsequent reads from it will return its default value.
+  public mutating func clearDream() {_uniqueStorage()._dream = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _storage = _StorageClass.defaultInstance
 }
 
 /// Turns a surface's mode on or off.
@@ -3829,6 +4126,18 @@ public nonisolated struct ClientCreationIntent: @unchecked Sendable {
     set {_uniqueStorage()._codeReview = newValue}
   }
 
+  /// Agent memory for the conversation. The preview sets the project's
+  /// default; absent while the project has memory off. Switchable later
+  /// (MemoryCommand.set_enabled); never remembered between forms.
+  public var memory: Bool {
+    get {_storage._memory ?? false}
+    set {_uniqueStorage()._memory = newValue}
+  }
+  /// Returns true if `memory` has been explicitly set.
+  public var hasMemory: Bool {_storage._memory != nil}
+  /// Clears the value of `memory`. Subsequent reads from it will return its default value.
+  public mutating func clearMemory() {_uniqueStorage()._memory = nil}
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -3937,6 +4246,9 @@ public nonisolated struct ClientCreationPreview: Sendable {
   /// The workspace mode's description, e.g. "Create a new isolated Git
   /// worktree and branch for this conversation."
   public var workspaceDetail: String = String()
+
+  /// The project has agent memory on: the form shows intent.memory's switch.
+  public var memoryAvailable: Bool = false
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -6425,6 +6737,33 @@ public nonisolated struct ClientResult: Sendable {
     set {result = .codeReview(newValue)}
   }
 
+  /// The memory setting (MemoryCommand.settings, update_settings).
+  public var memorySettings: DieterAPI.Dieter_V1_MemorySettings {
+    get {
+      if case .memorySettings(let v)? = result {return v}
+      return DieterAPI.Dieter_V1_MemorySettings()
+    }
+    set {result = .memorySettings(newValue)}
+  }
+
+  /// A project's memory state (MemoryCommand.status).
+  public var memoryStatus: DieterAPI.Dieter_V1_MemoryStatus {
+    get {
+      if case .memoryStatus(let v)? = result {return v}
+      return DieterAPI.Dieter_V1_MemoryStatus()
+    }
+    set {result = .memoryStatus(newValue)}
+  }
+
+  /// A dream a MemoryCommand started, read or changed.
+  public var memoryDream: ClientMemoryDreamState {
+    get {
+      if case .memoryDream(let v)? = result {return v}
+      return ClientMemoryDreamState()
+    }
+    set {result = .memoryDream(newValue)}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Result: Equatable, Sendable {
@@ -6502,6 +6841,12 @@ public nonisolated struct ClientResult: Sendable {
     case reviewerSettings(DieterAPI.Dieter_V1_ReviewerSettings)
     /// A review a CodeReviewCommand.start started.
     case codeReview(DieterAPI.Dieter_V1_CodeReview)
+    /// The memory setting (MemoryCommand.settings, update_settings).
+    case memorySettings(DieterAPI.Dieter_V1_MemorySettings)
+    /// A project's memory state (MemoryCommand.status).
+    case memoryStatus(DieterAPI.Dieter_V1_MemoryStatus)
+    /// A dream a MemoryCommand started, read or changed.
+    case memoryDream(ClientMemoryDreamState)
 
   }
 
@@ -6666,277 +7011,289 @@ public nonisolated struct ClientReply: Sendable {
   public init() {}
 }
 
-public nonisolated struct ClientUpdate: Sendable {
+public nonisolated struct ClientUpdate: @unchecked Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  public var slice: ClientSlice = .unspecified
+  public var slice: ClientSlice {
+    get {_storage._slice}
+    set {_uniqueStorage()._slice = newValue}
+  }
 
-  public var scope: String = String()
+  public var scope: String {
+    get {_storage._scope}
+    set {_uniqueStorage()._scope = newValue}
+  }
 
   /// Increases by one per update of this subscription; a gap means a missed
   /// delta and the observer resubscribes.
-  public var sequence: UInt64 = 0
+  public var sequence: UInt64 {
+    get {_storage._sequence}
+    set {_uniqueStorage()._sequence = newValue}
+  }
 
-  public var value: ClientUpdate.OneOf_Value? = nil
+  public var value: OneOf_Value? {
+    get {return _storage._value}
+    set {_uniqueStorage()._value = newValue}
+  }
 
   public var session: ClientSessionSlice {
     get {
-      if case .session(let v)? = value {return v}
+      if case .session(let v)? = _storage._value {return v}
       return ClientSessionSlice()
     }
-    set {value = .session(newValue)}
+    set {_uniqueStorage()._value = .session(newValue)}
   }
 
   public var workspace: ClientWorkspaceSlice {
     get {
-      if case .workspace(let v)? = value {return v}
+      if case .workspace(let v)? = _storage._value {return v}
       return ClientWorkspaceSlice()
     }
-    set {value = .workspace(newValue)}
+    set {_uniqueStorage()._value = .workspace(newValue)}
   }
 
   public var workspaceDelta: ClientWorkspaceDelta {
     get {
-      if case .workspaceDelta(let v)? = value {return v}
+      if case .workspaceDelta(let v)? = _storage._value {return v}
       return ClientWorkspaceDelta()
     }
-    set {value = .workspaceDelta(newValue)}
+    set {_uniqueStorage()._value = .workspaceDelta(newValue)}
   }
 
   public var outbox: ClientOutboxSlice {
     get {
-      if case .outbox(let v)? = value {return v}
+      if case .outbox(let v)? = _storage._value {return v}
       return ClientOutboxSlice()
     }
-    set {value = .outbox(newValue)}
+    set {_uniqueStorage()._value = .outbox(newValue)}
   }
 
   public var activity: ClientActivitySlice {
     get {
-      if case .activity(let v)? = value {return v}
+      if case .activity(let v)? = _storage._value {return v}
       return ClientActivitySlice()
     }
-    set {value = .activity(newValue)}
+    set {_uniqueStorage()._value = .activity(newValue)}
   }
 
   public var conversation: ClientConversationSlice {
     get {
-      if case .conversation(let v)? = value {return v}
+      if case .conversation(let v)? = _storage._value {return v}
       return ClientConversationSlice()
     }
-    set {value = .conversation(newValue)}
+    set {_uniqueStorage()._value = .conversation(newValue)}
   }
 
   public var conversationDelta: ClientConversationDelta {
     get {
-      if case .conversationDelta(let v)? = value {return v}
+      if case .conversationDelta(let v)? = _storage._value {return v}
       return ClientConversationDelta()
     }
-    set {value = .conversationDelta(newValue)}
+    set {_uniqueStorage()._value = .conversationDelta(newValue)}
   }
 
   public var metadata: ClientMetadataSlice {
     get {
-      if case .metadata(let v)? = value {return v}
+      if case .metadata(let v)? = _storage._value {return v}
       return ClientMetadataSlice()
     }
-    set {value = .metadata(newValue)}
+    set {_uniqueStorage()._value = .metadata(newValue)}
   }
 
   public var board: ClientBoardSlice {
     get {
-      if case .board(let v)? = value {return v}
+      if case .board(let v)? = _storage._value {return v}
       return ClientBoardSlice()
     }
-    set {value = .board(newValue)}
+    set {_uniqueStorage()._value = .board(newValue)}
   }
 
   public var navigation: ClientNavigationSlice {
     get {
-      if case .navigation(let v)? = value {return v}
+      if case .navigation(let v)? = _storage._value {return v}
       return ClientNavigationSlice()
     }
-    set {value = .navigation(newValue)}
+    set {_uniqueStorage()._value = .navigation(newValue)}
   }
 
   public var creation: ClientCreationSlice {
     get {
-      if case .creation(let v)? = value {return v}
+      if case .creation(let v)? = _storage._value {return v}
       return ClientCreationSlice()
     }
-    set {value = .creation(newValue)}
+    set {_uniqueStorage()._value = .creation(newValue)}
   }
 
   public var files: ClientFilesSlice {
     get {
-      if case .files(let v)? = value {return v}
+      if case .files(let v)? = _storage._value {return v}
       return ClientFilesSlice()
     }
-    set {value = .files(newValue)}
+    set {_uniqueStorage()._value = .files(newValue)}
   }
 
   public var fileTree: ClientFileTreeSlice {
     get {
-      if case .fileTree(let v)? = value {return v}
+      if case .fileTree(let v)? = _storage._value {return v}
       return ClientFileTreeSlice()
     }
-    set {value = .fileTree(newValue)}
+    set {_uniqueStorage()._value = .fileTree(newValue)}
   }
 
   public var terminals: ClientTerminalsSlice {
     get {
-      if case .terminals(let v)? = value {return v}
+      if case .terminals(let v)? = _storage._value {return v}
       return ClientTerminalsSlice()
     }
-    set {value = .terminals(newValue)}
+    set {_uniqueStorage()._value = .terminals(newValue)}
   }
 
   public var terminalOverview: ClientTerminalOverviewSlice {
     get {
-      if case .terminalOverview(let v)? = value {return v}
+      if case .terminalOverview(let v)? = _storage._value {return v}
       return ClientTerminalOverviewSlice()
     }
-    set {value = .terminalOverview(newValue)}
+    set {_uniqueStorage()._value = .terminalOverview(newValue)}
   }
 
   public var schedules: ClientSchedulesSlice {
     get {
-      if case .schedules(let v)? = value {return v}
+      if case .schedules(let v)? = _storage._value {return v}
       return ClientSchedulesSlice()
     }
-    set {value = .schedules(newValue)}
+    set {_uniqueStorage()._value = .schedules(newValue)}
   }
 
   public var review: ClientReviewSlice {
     get {
-      if case .review(let v)? = value {return v}
+      if case .review(let v)? = _storage._value {return v}
       return ClientReviewSlice()
     }
-    set {value = .review(newValue)}
+    set {_uniqueStorage()._value = .review(newValue)}
   }
 
   public var projectChanges: ClientProjectChangesSlice {
     get {
-      if case .projectChanges(let v)? = value {return v}
+      if case .projectChanges(let v)? = _storage._value {return v}
       return ClientProjectChangesSlice()
     }
-    set {value = .projectChanges(newValue)}
+    set {_uniqueStorage()._value = .projectChanges(newValue)}
   }
 
   public var telemetry: ClientTelemetrySlice {
     get {
-      if case .telemetry(let v)? = value {return v}
+      if case .telemetry(let v)? = _storage._value {return v}
       return ClientTelemetrySlice()
     }
-    set {value = .telemetry(newValue)}
+    set {_uniqueStorage()._value = .telemetry(newValue)}
   }
 
   public var processes: ClientProcessesSlice {
     get {
-      if case .processes(let v)? = value {return v}
+      if case .processes(let v)? = _storage._value {return v}
       return ClientProcessesSlice()
     }
-    set {value = .processes(newValue)}
+    set {_uniqueStorage()._value = .processes(newValue)}
   }
 
   public var screen: ClientScreenSlice {
     get {
-      if case .screen(let v)? = value {return v}
+      if case .screen(let v)? = _storage._value {return v}
       return ClientScreenSlice()
     }
-    set {value = .screen(newValue)}
+    set {_uniqueStorage()._value = .screen(newValue)}
   }
 
   public var boardView: ClientBoardViewSlice {
     get {
-      if case .boardView(let v)? = value {return v}
+      if case .boardView(let v)? = _storage._value {return v}
       return ClientBoardViewSlice()
     }
-    set {value = .boardView(newValue)}
+    set {_uniqueStorage()._value = .boardView(newValue)}
   }
 
   public var chats: ClientChatsSlice {
     get {
-      if case .chats(let v)? = value {return v}
+      if case .chats(let v)? = _storage._value {return v}
       return ClientChatsSlice()
     }
-    set {value = .chats(newValue)}
+    set {_uniqueStorage()._value = .chats(newValue)}
   }
 
   public var creationPreview: ClientCreationPreview {
     get {
-      if case .creationPreview(let v)? = value {return v}
+      if case .creationPreview(let v)? = _storage._value {return v}
       return ClientCreationPreview()
     }
-    set {value = .creationPreview(newValue)}
+    set {_uniqueStorage()._value = .creationPreview(newValue)}
   }
 
   public var devices: ClientDevicesSlice {
     get {
-      if case .devices(let v)? = value {return v}
+      if case .devices(let v)? = _storage._value {return v}
       return ClientDevicesSlice()
     }
-    set {value = .devices(newValue)}
+    set {_uniqueStorage()._value = .devices(newValue)}
   }
 
   public var channels: ClientChannelsSlice {
     get {
-      if case .channels(let v)? = value {return v}
+      if case .channels(let v)? = _storage._value {return v}
       return ClientChannelsSlice()
     }
-    set {value = .channels(newValue)}
+    set {_uniqueStorage()._value = .channels(newValue)}
   }
 
   public var mail: ClientMailSlice {
     get {
-      if case .mail(let v)? = value {return v}
+      if case .mail(let v)? = _storage._value {return v}
       return ClientMailSlice()
     }
-    set {value = .mail(newValue)}
+    set {_uniqueStorage()._value = .mail(newValue)}
   }
 
   public var folders: ClientFoldersSlice {
     get {
-      if case .folders(let v)? = value {return v}
+      if case .folders(let v)? = _storage._value {return v}
       return ClientFoldersSlice()
     }
-    set {value = .folders(newValue)}
+    set {_uniqueStorage()._value = .folders(newValue)}
   }
 
   public var folder: ClientFolderSlice {
     get {
-      if case .folder(let v)? = value {return v}
+      if case .folder(let v)? = _storage._value {return v}
       return ClientFolderSlice()
     }
-    set {value = .folder(newValue)}
+    set {_uniqueStorage()._value = .folder(newValue)}
   }
 
   public var folderSyncSettings: ClientFolderSyncSettingsSlice {
     get {
-      if case .folderSyncSettings(let v)? = value {return v}
+      if case .folderSyncSettings(let v)? = _storage._value {return v}
       return ClientFolderSyncSettingsSlice()
     }
-    set {value = .folderSyncSettings(newValue)}
+    set {_uniqueStorage()._value = .folderSyncSettings(newValue)}
   }
 
   public var providers: ClientProvidersSlice {
     get {
-      if case .providers(let v)? = value {return v}
+      if case .providers(let v)? = _storage._value {return v}
       return ClientProvidersSlice()
     }
-    set {value = .providers(newValue)}
+    set {_uniqueStorage()._value = .providers(newValue)}
   }
 
   /// The view's surface could not open, e.g. screen sharing on a device
   /// without it. Sent once; nothing follows.
   public var failure: ClientFailure {
     get {
-      if case .failure(let v)? = value {return v}
+      if case .failure(let v)? = _storage._value {return v}
       return ClientFailure()
     }
-    set {value = .failure(newValue)}
+    set {_uniqueStorage()._value = .failure(newValue)}
   }
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
@@ -6980,6 +7337,8 @@ public nonisolated struct ClientUpdate: Sendable {
   }
 
   public init() {}
+
+  fileprivate var _storage = _StorageClass.defaultInstance
 }
 
 public nonisolated struct ClientSessionSlice: @unchecked Sendable {
@@ -8192,6 +8551,17 @@ public nonisolated struct ClientConversationState: @unchecked Sendable {
   /// Clears the value of `codeReview`. Subsequent reads from it will return its default value.
   public mutating func clearCodeReview() {_uniqueStorage()._codeReview = nil}
 
+  /// The conversation's agent memory. Unset until the conversation's card is
+  /// known.
+  public var memory: ClientConversationMemory {
+    get {_storage._memory ?? ClientConversationMemory()}
+    set {_uniqueStorage()._memory = newValue}
+  }
+  /// Returns true if `memory` has been explicitly set.
+  public var hasMemory: Bool {_storage._memory != nil}
+  /// Clears the value of `memory`. Subsequent reads from it will return its default value.
+  public mutating func clearMemory() {_uniqueStorage()._memory = nil}
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -8233,6 +8603,42 @@ public nonisolated struct ClientConversationCodeReview: Sendable {
   public init() {}
 
   fileprivate var _latest: ClientTimelineCodeReview? = nil
+}
+
+/// A conversation's agent memory, for its switch and a dream's banner.
+public nonisolated struct ClientConversationMemory: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// The agent recalls and saves memories from its next turn.
+  public var enabled: Bool = false
+
+  /// The switch shows: the project has memory on and this is not a dream.
+  public var shown: Bool = false
+
+  /// The switch can change it: shown, and the conversation is known and not
+  /// archived.
+  public var canToggle: Bool = false
+
+  /// A dream conversation (Card.memory_role "dreamer"); it always has memory.
+  public var dreamer: Bool = false
+
+  /// A dream conversation's dream; unset until its machine reported it.
+  public var dream: ClientMemoryDreamState {
+    get {_dream ?? ClientMemoryDreamState()}
+    set {_dream = newValue}
+  }
+  /// Returns true if `dream` has been explicitly set.
+  public var hasDream: Bool {self._dream != nil}
+  /// Clears the value of `dream`. Subsequent reads from it will return its default value.
+  public mutating func clearDream() {self._dream = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _dream: ClientMemoryDreamState? = nil
 }
 
 public nonisolated struct ClientProviderNotice: Sendable {
@@ -11908,6 +12314,16 @@ public nonisolated struct ClientAdminUpdateProject: Sendable {
   /// Clears the value of `deleteWorktreesOnArchive`. Subsequent reads from it will return its default value.
   public mutating func clearDeleteWorktreesOnArchive() {self._deleteWorktreesOnArchive = nil}
 
+  /// Agent memory for the project's conversations; absent preserves it.
+  public var memoryEnabled: Bool {
+    get {_memoryEnabled ?? false}
+    set {_memoryEnabled = newValue}
+  }
+  /// Returns true if `memoryEnabled` has been explicitly set.
+  public var hasMemoryEnabled: Bool {self._memoryEnabled != nil}
+  /// Clears the value of `memoryEnabled`. Subsequent reads from it will return its default value.
+  public mutating func clearMemoryEnabled() {self._memoryEnabled = nil}
+
   public var projectID: String = String()
 
   public var name: String {
@@ -11947,6 +12363,7 @@ public nonisolated struct ClientAdminUpdateProject: Sendable {
   public init() {}
 
   fileprivate var _deleteWorktreesOnArchive: Bool? = nil
+  fileprivate var _memoryEnabled: Bool? = nil
   fileprivate var _name: String? = nil
   fileprivate var _summary: String? = nil
   fileprivate var _prompt: String? = nil
@@ -18076,7 +18493,7 @@ nonisolated extension ClientFolderDirection: SwiftProtobuf._ProtoNameProviding {
 
 nonisolated extension ClientCommand: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Command"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}adopt_session\0\u{3}begin_sign_in\0\u{3}complete_sign_in\0\u{4}\u{2}select_gateway\0\u{4}\u{2}set_connected\0\u{3}set_foreground\0\u{4}\u{2}create_conversation\0\u{3}send_message\0\u{3}start_card\0\u{3}move_card\0\u{3}finish_card\0\u{3}set_card_labels\0\u{3}set_card_pinned\0\u{3}rename_card\0\u{3}archive_card\0\u{3}cancel_card\0\u{3}mark_card_read\0\u{3}retry_pending\0\u{3}discard_pending\0\u{3}restore_card\0\u{3}add_card_label\0\u{3}update_card_draft\0\u{3}merge_card\0\u{3}fork_card\0\u{3}list_archived_cards\0\u{4}\u{2}load_earlier_messages\0\u{3}return_to_latest\0\u{3}refresh_conversation\0\u{3}set_visible_conversation\0\u{3}load_later_messages\0\u{3}retry_failed_turn\0\u{3}remove_queued_message\0\u{3}steer_conversation\0\u{3}load_tool_output\0\u{4}\u{2}rename_machine\0\u{3}revoke_machine\0\u{3}ensure_metadata\0\u{3}use_gateway\0\u{1}resync\0\u{3}set_project_order\0\u{4}\u{3}set_project_expanded\0\u{3}set_chat_section_collapsed\0\u{3}set_chats_show_all\0\u{3}set_lane_descending\0\u{3}set_folders\0\u{3}list_drafts\0\u{3}set_draft_text\0\u{3}remember_creation\0\u{1}files\0\u{3}file_tree\0\u{1}terminals\0\u{3}terminal_overview\0\u{1}schedules\0\u{1}review\0\u{3}project_changes\0\u{3}project_workspaces\0\u{1}admin\0\u{1}telemetry\0\u{2}\u{2}processes\0\u{1}search\0\u{1}screen\0\u{4}\u{2}set_show_reasoning\0\u{3}board_view\0\u{2}\u{2}chats\0\u{1}navigation\0\u{3}creation_preview\0\u{3}choose_agent\0\u{3}sign_out\0\u{1}reconnect\0\u{3}remove_gateway\0\u{1}devices\0\u{3}system_woke\0\u{1}channels\0\u{1}mail\0\u{3}notification_response\0\u{1}folders\0\u{1}providers\0\u{3}code_review\0\u{b}quotas\0\u{c}B\u{1}\u{1}")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}adopt_session\0\u{3}begin_sign_in\0\u{3}complete_sign_in\0\u{4}\u{2}select_gateway\0\u{4}\u{2}set_connected\0\u{3}set_foreground\0\u{4}\u{2}create_conversation\0\u{3}send_message\0\u{3}start_card\0\u{3}move_card\0\u{3}finish_card\0\u{3}set_card_labels\0\u{3}set_card_pinned\0\u{3}rename_card\0\u{3}archive_card\0\u{3}cancel_card\0\u{3}mark_card_read\0\u{3}retry_pending\0\u{3}discard_pending\0\u{3}restore_card\0\u{3}add_card_label\0\u{3}update_card_draft\0\u{3}merge_card\0\u{3}fork_card\0\u{3}list_archived_cards\0\u{4}\u{2}load_earlier_messages\0\u{3}return_to_latest\0\u{3}refresh_conversation\0\u{3}set_visible_conversation\0\u{3}load_later_messages\0\u{3}retry_failed_turn\0\u{3}remove_queued_message\0\u{3}steer_conversation\0\u{3}load_tool_output\0\u{4}\u{2}rename_machine\0\u{3}revoke_machine\0\u{3}ensure_metadata\0\u{3}use_gateway\0\u{1}resync\0\u{3}set_project_order\0\u{4}\u{3}set_project_expanded\0\u{3}set_chat_section_collapsed\0\u{3}set_chats_show_all\0\u{3}set_lane_descending\0\u{3}set_folders\0\u{3}list_drafts\0\u{3}set_draft_text\0\u{3}remember_creation\0\u{1}files\0\u{3}file_tree\0\u{1}terminals\0\u{3}terminal_overview\0\u{1}schedules\0\u{1}review\0\u{3}project_changes\0\u{3}project_workspaces\0\u{1}admin\0\u{1}telemetry\0\u{2}\u{2}processes\0\u{1}search\0\u{1}screen\0\u{4}\u{2}set_show_reasoning\0\u{3}board_view\0\u{2}\u{2}chats\0\u{1}navigation\0\u{3}creation_preview\0\u{3}choose_agent\0\u{3}sign_out\0\u{1}reconnect\0\u{3}remove_gateway\0\u{1}devices\0\u{3}system_woke\0\u{1}channels\0\u{1}mail\0\u{3}notification_response\0\u{1}folders\0\u{1}providers\0\u{3}code_review\0\u{1}memory\0\u{b}quotas\0\u{c}B\u{1}\u{1}")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -19098,6 +19515,19 @@ nonisolated extension ClientCommand: SwiftProtobuf.Message, SwiftProtobuf._Messa
           self.command = .codeReview(v)
         }
       }()
+      case 89: try {
+        var v: ClientMemoryCommand?
+        var hadOneofValue = false
+        if let current = self.command {
+          hadOneofValue = true
+          if case .memory(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.command = .memory(v)
+        }
+      }()
       default: break
       }
     }
@@ -19421,6 +19851,10 @@ nonisolated extension ClientCommand: SwiftProtobuf.Message, SwiftProtobuf._Messa
       guard case .codeReview(let v)? = self.command else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 88)
     }()
+    case .memory?: try {
+      guard case .memory(let v)? = self.command else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 89)
+    }()
     case nil: break
     }
     try unknownFields.traverse(visitor: &visitor)
@@ -19692,6 +20126,534 @@ nonisolated extension ClientCodeReviewStart: SwiftProtobuf.Message, SwiftProtobu
     if lhs.cardID != rhs.cardID {return false}
     if lhs.focus != rhs.focus {return false}
     if lhs.depth != rhs.depth {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientMemoryCommand: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".MemoryCommand"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}settings\0\u{3}update_settings\0\u{3}set_enabled\0\u{1}status\0\u{3}start_dream\0\u{1}dream\0\u{3}apply_dream\0\u{3}discard_dream\0\u{3}undo_dream\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try {
+        var v: ClientMemoryMachine?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .settings(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .settings(v)
+        }
+      }()
+      case 2: try {
+        var v: ClientMemorySettingsUpdate?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .updateSettings(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .updateSettings(v)
+        }
+      }()
+      case 3: try {
+        var v: ClientMemorySwitch?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .setEnabled(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .setEnabled(v)
+        }
+      }()
+      case 4: try {
+        var v: ClientMemoryProjectRef?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .status(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .status(v)
+        }
+      }()
+      case 5: try {
+        var v: ClientMemoryProjectRef?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .startDream(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .startDream(v)
+        }
+      }()
+      case 6: try {
+        var v: ClientMemoryCardRef?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .dream(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .dream(v)
+        }
+      }()
+      case 7: try {
+        var v: ClientMemoryCardRef?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .applyDream(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .applyDream(v)
+        }
+      }()
+      case 8: try {
+        var v: ClientMemoryCardRef?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .discardDream(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .discardDream(v)
+        }
+      }()
+      case 9: try {
+        var v: ClientMemoryCardRef?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .undoDream(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .undoDream(v)
+        }
+      }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    switch self.action {
+    case .settings?: try {
+      guard case .settings(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+    }()
+    case .updateSettings?: try {
+      guard case .updateSettings(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+    }()
+    case .setEnabled?: try {
+      guard case .setEnabled(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
+    }()
+    case .status?: try {
+      guard case .status(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
+    }()
+    case .startDream?: try {
+      guard case .startDream(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 5)
+    }()
+    case .dream?: try {
+      guard case .dream(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
+    }()
+    case .applyDream?: try {
+      guard case .applyDream(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 7)
+    }()
+    case .discardDream?: try {
+      guard case .discardDream(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 8)
+    }()
+    case .undoDream?: try {
+      guard case .undoDream(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 9)
+    }()
+    case nil: break
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientMemoryCommand, rhs: ClientMemoryCommand) -> Bool {
+    if lhs.action != rhs.action {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientMemoryMachine: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".MemoryMachine"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}daemon_id\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.daemonID) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.daemonID.isEmpty {
+      try visitor.visitSingularStringField(value: self.daemonID, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientMemoryMachine, rhs: ClientMemoryMachine) -> Bool {
+    if lhs.daemonID != rhs.daemonID {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientMemorySettingsUpdate: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".MemorySettingsUpdate"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}daemon_id\0\u{1}settings\0")
+
+  fileprivate class _StorageClass {
+    var _daemonID: String = String()
+    var _settings: DieterAPI.Dieter_V1_MemorySettings? = nil
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _daemonID = source._daemonID
+      _settings = source._settings
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeSingularStringField(value: &_storage._daemonID) }()
+        case 2: try { try decoder.decodeSingularMessageField(value: &_storage._settings) }()
+        default: break
+        }
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every if/case branch local when no optimizations
+      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+      // https://github.com/apple/swift-protobuf/issues/1182
+      if !_storage._daemonID.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._daemonID, fieldNumber: 1)
+      }
+      try { if let v = _storage._settings {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+      } }()
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientMemorySettingsUpdate, rhs: ClientMemorySettingsUpdate) -> Bool {
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._daemonID != rhs_storage._daemonID {return false}
+        if _storage._settings != rhs_storage._settings {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientMemorySwitch: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".MemorySwitch"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}card_id\0\u{1}enabled\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.cardID) }()
+      case 2: try { try decoder.decodeSingularBoolField(value: &self.enabled) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.cardID.isEmpty {
+      try visitor.visitSingularStringField(value: self.cardID, fieldNumber: 1)
+    }
+    if self.enabled != false {
+      try visitor.visitSingularBoolField(value: self.enabled, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientMemorySwitch, rhs: ClientMemorySwitch) -> Bool {
+    if lhs.cardID != rhs.cardID {return false}
+    if lhs.enabled != rhs.enabled {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientMemoryProjectRef: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".MemoryProjectRef"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.projectID) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.projectID.isEmpty {
+      try visitor.visitSingularStringField(value: self.projectID, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientMemoryProjectRef, rhs: ClientMemoryProjectRef) -> Bool {
+    if lhs.projectID != rhs.projectID {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientMemoryCardRef: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".MemoryCardRef"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}card_id\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.cardID) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.cardID.isEmpty {
+      try visitor.visitSingularStringField(value: self.cardID, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientMemoryCardRef, rhs: ClientMemoryCardRef) -> Bool {
+    if lhs.cardID != rhs.cardID {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientMemoryDreamState: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".MemoryDreamState"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}card_id\0\u{1}status\0\u{1}running\0\u{1}title\0\u{3}counts_label\0\u{1}detail\0\u{3}can_apply\0\u{3}can_discard\0\u{3}can_undo\0\u{1}error\0\u{1}dream\0")
+
+  fileprivate class _StorageClass {
+    var _cardID: String = String()
+    var _status: String = String()
+    var _running: Bool = false
+    var _title: String = String()
+    var _countsLabel: String = String()
+    var _detail: String = String()
+    var _canApply: Bool = false
+    var _canDiscard: Bool = false
+    var _canUndo: Bool = false
+    var _error: String = String()
+    var _dream: DieterAPI.Dieter_V1_MemoryDream? = nil
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _cardID = source._cardID
+      _status = source._status
+      _running = source._running
+      _title = source._title
+      _countsLabel = source._countsLabel
+      _detail = source._detail
+      _canApply = source._canApply
+      _canDiscard = source._canDiscard
+      _canUndo = source._canUndo
+      _error = source._error
+      _dream = source._dream
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeSingularStringField(value: &_storage._cardID) }()
+        case 2: try { try decoder.decodeSingularStringField(value: &_storage._status) }()
+        case 3: try { try decoder.decodeSingularBoolField(value: &_storage._running) }()
+        case 4: try { try decoder.decodeSingularStringField(value: &_storage._title) }()
+        case 5: try { try decoder.decodeSingularStringField(value: &_storage._countsLabel) }()
+        case 6: try { try decoder.decodeSingularStringField(value: &_storage._detail) }()
+        case 7: try { try decoder.decodeSingularBoolField(value: &_storage._canApply) }()
+        case 8: try { try decoder.decodeSingularBoolField(value: &_storage._canDiscard) }()
+        case 9: try { try decoder.decodeSingularBoolField(value: &_storage._canUndo) }()
+        case 10: try { try decoder.decodeSingularStringField(value: &_storage._error) }()
+        case 11: try { try decoder.decodeSingularMessageField(value: &_storage._dream) }()
+        default: break
+        }
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every if/case branch local when no optimizations
+      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+      // https://github.com/apple/swift-protobuf/issues/1182
+      if !_storage._cardID.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._cardID, fieldNumber: 1)
+      }
+      if !_storage._status.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._status, fieldNumber: 2)
+      }
+      if _storage._running != false {
+        try visitor.visitSingularBoolField(value: _storage._running, fieldNumber: 3)
+      }
+      if !_storage._title.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._title, fieldNumber: 4)
+      }
+      if !_storage._countsLabel.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._countsLabel, fieldNumber: 5)
+      }
+      if !_storage._detail.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._detail, fieldNumber: 6)
+      }
+      if _storage._canApply != false {
+        try visitor.visitSingularBoolField(value: _storage._canApply, fieldNumber: 7)
+      }
+      if _storage._canDiscard != false {
+        try visitor.visitSingularBoolField(value: _storage._canDiscard, fieldNumber: 8)
+      }
+      if _storage._canUndo != false {
+        try visitor.visitSingularBoolField(value: _storage._canUndo, fieldNumber: 9)
+      }
+      if !_storage._error.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._error, fieldNumber: 10)
+      }
+      try { if let v = _storage._dream {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 11)
+      } }()
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientMemoryDreamState, rhs: ClientMemoryDreamState) -> Bool {
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._cardID != rhs_storage._cardID {return false}
+        if _storage._status != rhs_storage._status {return false}
+        if _storage._running != rhs_storage._running {return false}
+        if _storage._title != rhs_storage._title {return false}
+        if _storage._countsLabel != rhs_storage._countsLabel {return false}
+        if _storage._detail != rhs_storage._detail {return false}
+        if _storage._canApply != rhs_storage._canApply {return false}
+        if _storage._canDiscard != rhs_storage._canDiscard {return false}
+        if _storage._canUndo != rhs_storage._canUndo {return false}
+        if _storage._error != rhs_storage._error {return false}
+        if _storage._dream != rhs_storage._dream {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -22220,7 +23182,7 @@ nonisolated extension ClientRememberCreation: SwiftProtobuf.Message, SwiftProtob
 
 nonisolated extension ClientCreationIntent: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".CreationIntent"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{3}board_id\0\u{3}checkout_id\0\u{1}lane\0\u{1}title\0\u{1}prompt\0\u{1}attachments\0\u{1}selection\0\u{3}label_ids\0\u{3}workspace_mode\0\u{3}workspace_branch\0\u{3}workspace_base_branch\0\u{3}workspace_base_remote\0\u{3}remote_publish_mode\0\u{3}vault_access\0\u{3}mail_access\0\u{3}code_review\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{3}board_id\0\u{3}checkout_id\0\u{1}lane\0\u{1}title\0\u{1}prompt\0\u{1}attachments\0\u{1}selection\0\u{3}label_ids\0\u{3}workspace_mode\0\u{3}workspace_branch\0\u{3}workspace_base_branch\0\u{3}workspace_base_remote\0\u{3}remote_publish_mode\0\u{3}vault_access\0\u{3}mail_access\0\u{3}code_review\0\u{1}memory\0")
 
   fileprivate class _StorageClass {
     var _projectID: String = String()
@@ -22240,6 +23202,7 @@ nonisolated extension ClientCreationIntent: SwiftProtobuf.Message, SwiftProtobuf
     var _vaultAccess: Bool = false
     var _mailAccess: Bool = false
     var _codeReview: Bool = false
+    var _memory: Bool? = nil
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -22267,6 +23230,7 @@ nonisolated extension ClientCreationIntent: SwiftProtobuf.Message, SwiftProtobuf
       _vaultAccess = source._vaultAccess
       _mailAccess = source._mailAccess
       _codeReview = source._codeReview
+      _memory = source._memory
     }
   }
 
@@ -22302,6 +23266,7 @@ nonisolated extension ClientCreationIntent: SwiftProtobuf.Message, SwiftProtobuf
         case 15: try { try decoder.decodeSingularBoolField(value: &_storage._vaultAccess) }()
         case 16: try { try decoder.decodeSingularBoolField(value: &_storage._mailAccess) }()
         case 17: try { try decoder.decodeSingularBoolField(value: &_storage._codeReview) }()
+        case 18: try { try decoder.decodeSingularBoolField(value: &_storage._memory) }()
         default: break
         }
       }
@@ -22365,6 +23330,9 @@ nonisolated extension ClientCreationIntent: SwiftProtobuf.Message, SwiftProtobuf
       if _storage._codeReview != false {
         try visitor.visitSingularBoolField(value: _storage._codeReview, fieldNumber: 17)
       }
+      try { if let v = _storage._memory {
+        try visitor.visitSingularBoolField(value: v, fieldNumber: 18)
+      } }()
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -22391,6 +23359,7 @@ nonisolated extension ClientCreationIntent: SwiftProtobuf.Message, SwiftProtobuf
         if _storage._vaultAccess != rhs_storage._vaultAccess {return false}
         if _storage._mailAccess != rhs_storage._mailAccess {return false}
         if _storage._codeReview != rhs_storage._codeReview {return false}
+        if _storage._memory != rhs_storage._memory {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -22451,7 +23420,7 @@ nonisolated extension ClientCreationPreviewCommand: SwiftProtobuf.Message, Swift
 
 nonisolated extension ClientCreationPreview: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".CreationPreview"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}problem\0\u{1}intent\0\u{1}catalog\0\u{3}destination_status\0\u{3}offline_hint\0\u{1}agent\0\u{3}start_lanes\0\u{2}\u{2}title\0\u{3}defers_start\0\u{3}opens_after_create\0\u{1}summary\0\u{3}daemon_id\0\u{3}workspace_detail\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}problem\0\u{1}intent\0\u{1}catalog\0\u{3}destination_status\0\u{3}offline_hint\0\u{1}agent\0\u{3}start_lanes\0\u{2}\u{2}title\0\u{3}defers_start\0\u{3}opens_after_create\0\u{1}summary\0\u{3}daemon_id\0\u{3}workspace_detail\0\u{3}memory_available\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -22472,6 +23441,7 @@ nonisolated extension ClientCreationPreview: SwiftProtobuf.Message, SwiftProtobu
       case 12: try { try decoder.decodeSingularStringField(value: &self.summary) }()
       case 13: try { try decoder.decodeSingularStringField(value: &self.daemonID) }()
       case 14: try { try decoder.decodeSingularStringField(value: &self.workspaceDetail) }()
+      case 15: try { try decoder.decodeSingularBoolField(value: &self.memoryAvailable) }()
       default: break
       }
     }
@@ -22521,6 +23491,9 @@ nonisolated extension ClientCreationPreview: SwiftProtobuf.Message, SwiftProtobu
     if !self.workspaceDetail.isEmpty {
       try visitor.visitSingularStringField(value: self.workspaceDetail, fieldNumber: 14)
     }
+    if self.memoryAvailable != false {
+      try visitor.visitSingularBoolField(value: self.memoryAvailable, fieldNumber: 15)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -22538,6 +23511,7 @@ nonisolated extension ClientCreationPreview: SwiftProtobuf.Message, SwiftProtobu
     if lhs.summary != rhs.summary {return false}
     if lhs.daemonID != rhs.daemonID {return false}
     if lhs.workspaceDetail != rhs.workspaceDetail {return false}
+    if lhs.memoryAvailable != rhs.memoryAvailable {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -26062,7 +27036,7 @@ nonisolated extension ClientNavigationFolder: SwiftProtobuf.Message, SwiftProtob
 
 nonisolated extension ClientResult: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Result"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}done\0\u{3}sign_in_started\0\u{1}card\0\u{3}message_queued\0\u{3}page_loaded\0\u{2}\u{2}cards\0\u{3}queued_message\0\u{3}tool_output\0\u{1}drafts\0\u{3}file_document\0\u{1}files\0\u{3}file_tree\0\u{1}terminal\0\u{1}terminals\0\u{3}terminal_overview\0\u{1}schedule\0\u{2}\u{2}schedules\0\u{3}git_operation\0\u{3}change_comment\0\u{1}outcome\0\u{1}review\0\u{3}project_changes\0\u{3}project_workspaces\0\u{1}project\0\u{1}board\0\u{1}checkout\0\u{3}directory_listing\0\u{3}prompt_settings\0\u{4}\u{3}prompt_preview\0\u{1}conflict\0\u{2}\u{2}projects\0\u{1}workspace\0\u{3}created_project\0\u{3}machine_operation\0\u{3}search_results\0\u{1}processes\0\u{4}\u{2}schedule_draft\0\u{4}\u{2}creation_preview\0\u{1}channels\0\u{1}mail\0\u{3}notification_target\0\u{1}folders\0\u{1}folder\0\u{3}folder_sync_settings\0\u{3}synced_folder\0\u{3}folder_member\0\u{3}folder_attach\0\u{3}folder_saved\0\u{3}provider_sign_in\0\u{3}provider_reset\0\u{3}provider_account\0\u{3}reviewer_settings\0\u{3}code_review\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}done\0\u{3}sign_in_started\0\u{1}card\0\u{3}message_queued\0\u{3}page_loaded\0\u{2}\u{2}cards\0\u{3}queued_message\0\u{3}tool_output\0\u{1}drafts\0\u{3}file_document\0\u{1}files\0\u{3}file_tree\0\u{1}terminal\0\u{1}terminals\0\u{3}terminal_overview\0\u{1}schedule\0\u{2}\u{2}schedules\0\u{3}git_operation\0\u{3}change_comment\0\u{1}outcome\0\u{1}review\0\u{3}project_changes\0\u{3}project_workspaces\0\u{1}project\0\u{1}board\0\u{1}checkout\0\u{3}directory_listing\0\u{3}prompt_settings\0\u{4}\u{3}prompt_preview\0\u{1}conflict\0\u{2}\u{2}projects\0\u{1}workspace\0\u{3}created_project\0\u{3}machine_operation\0\u{3}search_results\0\u{1}processes\0\u{4}\u{2}schedule_draft\0\u{4}\u{2}creation_preview\0\u{1}channels\0\u{1}mail\0\u{3}notification_target\0\u{1}folders\0\u{1}folder\0\u{3}folder_sync_settings\0\u{3}synced_folder\0\u{3}folder_member\0\u{3}folder_attach\0\u{3}folder_saved\0\u{3}provider_sign_in\0\u{3}provider_reset\0\u{3}provider_account\0\u{3}reviewer_settings\0\u{3}code_review\0\u{3}memory_settings\0\u{3}memory_status\0\u{3}memory_dream\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -26759,6 +27733,45 @@ nonisolated extension ClientResult: SwiftProtobuf.Message, SwiftProtobuf._Messag
           self.result = .codeReview(v)
         }
       }()
+      case 61: try {
+        var v: DieterAPI.Dieter_V1_MemorySettings?
+        var hadOneofValue = false
+        if let current = self.result {
+          hadOneofValue = true
+          if case .memorySettings(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.result = .memorySettings(v)
+        }
+      }()
+      case 62: try {
+        var v: DieterAPI.Dieter_V1_MemoryStatus?
+        var hadOneofValue = false
+        if let current = self.result {
+          hadOneofValue = true
+          if case .memoryStatus(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.result = .memoryStatus(v)
+        }
+      }()
+      case 63: try {
+        var v: ClientMemoryDreamState?
+        var hadOneofValue = false
+        if let current = self.result {
+          hadOneofValue = true
+          if case .memoryDream(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.result = .memoryDream(v)
+        }
+      }()
       default: break
       }
     }
@@ -26981,6 +27994,18 @@ nonisolated extension ClientResult: SwiftProtobuf.Message, SwiftProtobuf._Messag
     case .codeReview?: try {
       guard case .codeReview(let v)? = self.result else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 60)
+    }()
+    case .memorySettings?: try {
+      guard case .memorySettings(let v)? = self.result else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 61)
+    }()
+    case .memoryStatus?: try {
+      guard case .memoryStatus(let v)? = self.result else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 62)
+    }()
+    case .memoryDream?: try {
+      guard case .memoryDream(let v)? = self.result else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 63)
     }()
     case nil: break
     }
@@ -27243,589 +28268,631 @@ nonisolated extension ClientUpdate: SwiftProtobuf.Message, SwiftProtobuf._Messag
   public static let protoMessageName: String = _protobuf_package + ".Update"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}slice\0\u{1}scope\0\u{1}sequence\0\u{2}\u{6}failure\0\u{1}session\0\u{1}workspace\0\u{3}workspace_delta\0\u{1}outbox\0\u{1}activity\0\u{1}conversation\0\u{3}conversation_delta\0\u{1}metadata\0\u{1}board\0\u{1}navigation\0\u{1}creation\0\u{1}files\0\u{3}file_tree\0\u{1}terminals\0\u{3}terminal_overview\0\u{1}schedules\0\u{1}review\0\u{3}project_changes\0\u{2}\u{2}telemetry\0\u{2}\u{2}processes\0\u{1}screen\0\u{3}board_view\0\u{1}chats\0\u{3}creation_preview\0\u{1}devices\0\u{1}channels\0\u{2}\u{2}mail\0\u{1}folders\0\u{1}folder\0\u{3}folder_sync_settings\0\u{1}providers\0\u{b}quotas\0\u{c}\u{1e}\u{1}")
 
+  fileprivate class _StorageClass {
+    var _slice: ClientSlice = .unspecified
+    var _scope: String = String()
+    var _sequence: UInt64 = 0
+    var _value: ClientUpdate.OneOf_Value?
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _slice = source._slice
+      _scope = source._scope
+      _sequence = source._sequence
+      _value = source._value
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
+
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeSingularEnumField(value: &self.slice) }()
-      case 2: try { try decoder.decodeSingularStringField(value: &self.scope) }()
-      case 3: try { try decoder.decodeSingularUInt64Field(value: &self.sequence) }()
-      case 9: try {
-        var v: ClientFailure?
-        var hadOneofValue = false
-        if let current = self.value {
-          hadOneofValue = true
-          if case .failure(let m) = current {v = m}
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeSingularEnumField(value: &_storage._slice) }()
+        case 2: try { try decoder.decodeSingularStringField(value: &_storage._scope) }()
+        case 3: try { try decoder.decodeSingularUInt64Field(value: &_storage._sequence) }()
+        case 9: try {
+          var v: ClientFailure?
+          var hadOneofValue = false
+          if let current = _storage._value {
+            hadOneofValue = true
+            if case .failure(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._value = .failure(v)
+          }
+        }()
+        case 10: try {
+          var v: ClientSessionSlice?
+          var hadOneofValue = false
+          if let current = _storage._value {
+            hadOneofValue = true
+            if case .session(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._value = .session(v)
+          }
+        }()
+        case 11: try {
+          var v: ClientWorkspaceSlice?
+          var hadOneofValue = false
+          if let current = _storage._value {
+            hadOneofValue = true
+            if case .workspace(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._value = .workspace(v)
+          }
+        }()
+        case 12: try {
+          var v: ClientWorkspaceDelta?
+          var hadOneofValue = false
+          if let current = _storage._value {
+            hadOneofValue = true
+            if case .workspaceDelta(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._value = .workspaceDelta(v)
+          }
+        }()
+        case 13: try {
+          var v: ClientOutboxSlice?
+          var hadOneofValue = false
+          if let current = _storage._value {
+            hadOneofValue = true
+            if case .outbox(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._value = .outbox(v)
+          }
+        }()
+        case 14: try {
+          var v: ClientActivitySlice?
+          var hadOneofValue = false
+          if let current = _storage._value {
+            hadOneofValue = true
+            if case .activity(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._value = .activity(v)
+          }
+        }()
+        case 15: try {
+          var v: ClientConversationSlice?
+          var hadOneofValue = false
+          if let current = _storage._value {
+            hadOneofValue = true
+            if case .conversation(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._value = .conversation(v)
+          }
+        }()
+        case 16: try {
+          var v: ClientConversationDelta?
+          var hadOneofValue = false
+          if let current = _storage._value {
+            hadOneofValue = true
+            if case .conversationDelta(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._value = .conversationDelta(v)
+          }
+        }()
+        case 17: try {
+          var v: ClientMetadataSlice?
+          var hadOneofValue = false
+          if let current = _storage._value {
+            hadOneofValue = true
+            if case .metadata(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._value = .metadata(v)
+          }
+        }()
+        case 18: try {
+          var v: ClientBoardSlice?
+          var hadOneofValue = false
+          if let current = _storage._value {
+            hadOneofValue = true
+            if case .board(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._value = .board(v)
+          }
+        }()
+        case 19: try {
+          var v: ClientNavigationSlice?
+          var hadOneofValue = false
+          if let current = _storage._value {
+            hadOneofValue = true
+            if case .navigation(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._value = .navigation(v)
+          }
+        }()
+        case 20: try {
+          var v: ClientCreationSlice?
+          var hadOneofValue = false
+          if let current = _storage._value {
+            hadOneofValue = true
+            if case .creation(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._value = .creation(v)
+          }
+        }()
+        case 21: try {
+          var v: ClientFilesSlice?
+          var hadOneofValue = false
+          if let current = _storage._value {
+            hadOneofValue = true
+            if case .files(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._value = .files(v)
+          }
+        }()
+        case 22: try {
+          var v: ClientFileTreeSlice?
+          var hadOneofValue = false
+          if let current = _storage._value {
+            hadOneofValue = true
+            if case .fileTree(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._value = .fileTree(v)
+          }
+        }()
+        case 23: try {
+          var v: ClientTerminalsSlice?
+          var hadOneofValue = false
+          if let current = _storage._value {
+            hadOneofValue = true
+            if case .terminals(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._value = .terminals(v)
+          }
+        }()
+        case 24: try {
+          var v: ClientTerminalOverviewSlice?
+          var hadOneofValue = false
+          if let current = _storage._value {
+            hadOneofValue = true
+            if case .terminalOverview(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._value = .terminalOverview(v)
+          }
+        }()
+        case 25: try {
+          var v: ClientSchedulesSlice?
+          var hadOneofValue = false
+          if let current = _storage._value {
+            hadOneofValue = true
+            if case .schedules(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._value = .schedules(v)
+          }
+        }()
+        case 26: try {
+          var v: ClientReviewSlice?
+          var hadOneofValue = false
+          if let current = _storage._value {
+            hadOneofValue = true
+            if case .review(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._value = .review(v)
+          }
+        }()
+        case 27: try {
+          var v: ClientProjectChangesSlice?
+          var hadOneofValue = false
+          if let current = _storage._value {
+            hadOneofValue = true
+            if case .projectChanges(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._value = .projectChanges(v)
+          }
+        }()
+        case 29: try {
+          var v: ClientTelemetrySlice?
+          var hadOneofValue = false
+          if let current = _storage._value {
+            hadOneofValue = true
+            if case .telemetry(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._value = .telemetry(v)
+          }
+        }()
+        case 31: try {
+          var v: ClientProcessesSlice?
+          var hadOneofValue = false
+          if let current = _storage._value {
+            hadOneofValue = true
+            if case .processes(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._value = .processes(v)
+          }
+        }()
+        case 32: try {
+          var v: ClientScreenSlice?
+          var hadOneofValue = false
+          if let current = _storage._value {
+            hadOneofValue = true
+            if case .screen(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._value = .screen(v)
+          }
+        }()
+        case 33: try {
+          var v: ClientBoardViewSlice?
+          var hadOneofValue = false
+          if let current = _storage._value {
+            hadOneofValue = true
+            if case .boardView(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._value = .boardView(v)
+          }
+        }()
+        case 34: try {
+          var v: ClientChatsSlice?
+          var hadOneofValue = false
+          if let current = _storage._value {
+            hadOneofValue = true
+            if case .chats(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._value = .chats(v)
+          }
+        }()
+        case 35: try {
+          var v: ClientCreationPreview?
+          var hadOneofValue = false
+          if let current = _storage._value {
+            hadOneofValue = true
+            if case .creationPreview(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._value = .creationPreview(v)
+          }
+        }()
+        case 36: try {
+          var v: ClientDevicesSlice?
+          var hadOneofValue = false
+          if let current = _storage._value {
+            hadOneofValue = true
+            if case .devices(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._value = .devices(v)
+          }
+        }()
+        case 37: try {
+          var v: ClientChannelsSlice?
+          var hadOneofValue = false
+          if let current = _storage._value {
+            hadOneofValue = true
+            if case .channels(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._value = .channels(v)
+          }
+        }()
+        case 39: try {
+          var v: ClientMailSlice?
+          var hadOneofValue = false
+          if let current = _storage._value {
+            hadOneofValue = true
+            if case .mail(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._value = .mail(v)
+          }
+        }()
+        case 40: try {
+          var v: ClientFoldersSlice?
+          var hadOneofValue = false
+          if let current = _storage._value {
+            hadOneofValue = true
+            if case .folders(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._value = .folders(v)
+          }
+        }()
+        case 41: try {
+          var v: ClientFolderSlice?
+          var hadOneofValue = false
+          if let current = _storage._value {
+            hadOneofValue = true
+            if case .folder(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._value = .folder(v)
+          }
+        }()
+        case 42: try {
+          var v: ClientFolderSyncSettingsSlice?
+          var hadOneofValue = false
+          if let current = _storage._value {
+            hadOneofValue = true
+            if case .folderSyncSettings(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._value = .folderSyncSettings(v)
+          }
+        }()
+        case 43: try {
+          var v: ClientProvidersSlice?
+          var hadOneofValue = false
+          if let current = _storage._value {
+            hadOneofValue = true
+            if case .providers(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._value = .providers(v)
+          }
+        }()
+        default: break
         }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.value = .failure(v)
-        }
-      }()
-      case 10: try {
-        var v: ClientSessionSlice?
-        var hadOneofValue = false
-        if let current = self.value {
-          hadOneofValue = true
-          if case .session(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.value = .session(v)
-        }
-      }()
-      case 11: try {
-        var v: ClientWorkspaceSlice?
-        var hadOneofValue = false
-        if let current = self.value {
-          hadOneofValue = true
-          if case .workspace(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.value = .workspace(v)
-        }
-      }()
-      case 12: try {
-        var v: ClientWorkspaceDelta?
-        var hadOneofValue = false
-        if let current = self.value {
-          hadOneofValue = true
-          if case .workspaceDelta(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.value = .workspaceDelta(v)
-        }
-      }()
-      case 13: try {
-        var v: ClientOutboxSlice?
-        var hadOneofValue = false
-        if let current = self.value {
-          hadOneofValue = true
-          if case .outbox(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.value = .outbox(v)
-        }
-      }()
-      case 14: try {
-        var v: ClientActivitySlice?
-        var hadOneofValue = false
-        if let current = self.value {
-          hadOneofValue = true
-          if case .activity(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.value = .activity(v)
-        }
-      }()
-      case 15: try {
-        var v: ClientConversationSlice?
-        var hadOneofValue = false
-        if let current = self.value {
-          hadOneofValue = true
-          if case .conversation(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.value = .conversation(v)
-        }
-      }()
-      case 16: try {
-        var v: ClientConversationDelta?
-        var hadOneofValue = false
-        if let current = self.value {
-          hadOneofValue = true
-          if case .conversationDelta(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.value = .conversationDelta(v)
-        }
-      }()
-      case 17: try {
-        var v: ClientMetadataSlice?
-        var hadOneofValue = false
-        if let current = self.value {
-          hadOneofValue = true
-          if case .metadata(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.value = .metadata(v)
-        }
-      }()
-      case 18: try {
-        var v: ClientBoardSlice?
-        var hadOneofValue = false
-        if let current = self.value {
-          hadOneofValue = true
-          if case .board(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.value = .board(v)
-        }
-      }()
-      case 19: try {
-        var v: ClientNavigationSlice?
-        var hadOneofValue = false
-        if let current = self.value {
-          hadOneofValue = true
-          if case .navigation(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.value = .navigation(v)
-        }
-      }()
-      case 20: try {
-        var v: ClientCreationSlice?
-        var hadOneofValue = false
-        if let current = self.value {
-          hadOneofValue = true
-          if case .creation(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.value = .creation(v)
-        }
-      }()
-      case 21: try {
-        var v: ClientFilesSlice?
-        var hadOneofValue = false
-        if let current = self.value {
-          hadOneofValue = true
-          if case .files(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.value = .files(v)
-        }
-      }()
-      case 22: try {
-        var v: ClientFileTreeSlice?
-        var hadOneofValue = false
-        if let current = self.value {
-          hadOneofValue = true
-          if case .fileTree(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.value = .fileTree(v)
-        }
-      }()
-      case 23: try {
-        var v: ClientTerminalsSlice?
-        var hadOneofValue = false
-        if let current = self.value {
-          hadOneofValue = true
-          if case .terminals(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.value = .terminals(v)
-        }
-      }()
-      case 24: try {
-        var v: ClientTerminalOverviewSlice?
-        var hadOneofValue = false
-        if let current = self.value {
-          hadOneofValue = true
-          if case .terminalOverview(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.value = .terminalOverview(v)
-        }
-      }()
-      case 25: try {
-        var v: ClientSchedulesSlice?
-        var hadOneofValue = false
-        if let current = self.value {
-          hadOneofValue = true
-          if case .schedules(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.value = .schedules(v)
-        }
-      }()
-      case 26: try {
-        var v: ClientReviewSlice?
-        var hadOneofValue = false
-        if let current = self.value {
-          hadOneofValue = true
-          if case .review(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.value = .review(v)
-        }
-      }()
-      case 27: try {
-        var v: ClientProjectChangesSlice?
-        var hadOneofValue = false
-        if let current = self.value {
-          hadOneofValue = true
-          if case .projectChanges(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.value = .projectChanges(v)
-        }
-      }()
-      case 29: try {
-        var v: ClientTelemetrySlice?
-        var hadOneofValue = false
-        if let current = self.value {
-          hadOneofValue = true
-          if case .telemetry(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.value = .telemetry(v)
-        }
-      }()
-      case 31: try {
-        var v: ClientProcessesSlice?
-        var hadOneofValue = false
-        if let current = self.value {
-          hadOneofValue = true
-          if case .processes(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.value = .processes(v)
-        }
-      }()
-      case 32: try {
-        var v: ClientScreenSlice?
-        var hadOneofValue = false
-        if let current = self.value {
-          hadOneofValue = true
-          if case .screen(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.value = .screen(v)
-        }
-      }()
-      case 33: try {
-        var v: ClientBoardViewSlice?
-        var hadOneofValue = false
-        if let current = self.value {
-          hadOneofValue = true
-          if case .boardView(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.value = .boardView(v)
-        }
-      }()
-      case 34: try {
-        var v: ClientChatsSlice?
-        var hadOneofValue = false
-        if let current = self.value {
-          hadOneofValue = true
-          if case .chats(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.value = .chats(v)
-        }
-      }()
-      case 35: try {
-        var v: ClientCreationPreview?
-        var hadOneofValue = false
-        if let current = self.value {
-          hadOneofValue = true
-          if case .creationPreview(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.value = .creationPreview(v)
-        }
-      }()
-      case 36: try {
-        var v: ClientDevicesSlice?
-        var hadOneofValue = false
-        if let current = self.value {
-          hadOneofValue = true
-          if case .devices(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.value = .devices(v)
-        }
-      }()
-      case 37: try {
-        var v: ClientChannelsSlice?
-        var hadOneofValue = false
-        if let current = self.value {
-          hadOneofValue = true
-          if case .channels(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.value = .channels(v)
-        }
-      }()
-      case 39: try {
-        var v: ClientMailSlice?
-        var hadOneofValue = false
-        if let current = self.value {
-          hadOneofValue = true
-          if case .mail(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.value = .mail(v)
-        }
-      }()
-      case 40: try {
-        var v: ClientFoldersSlice?
-        var hadOneofValue = false
-        if let current = self.value {
-          hadOneofValue = true
-          if case .folders(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.value = .folders(v)
-        }
-      }()
-      case 41: try {
-        var v: ClientFolderSlice?
-        var hadOneofValue = false
-        if let current = self.value {
-          hadOneofValue = true
-          if case .folder(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.value = .folder(v)
-        }
-      }()
-      case 42: try {
-        var v: ClientFolderSyncSettingsSlice?
-        var hadOneofValue = false
-        if let current = self.value {
-          hadOneofValue = true
-          if case .folderSyncSettings(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.value = .folderSyncSettings(v)
-        }
-      }()
-      case 43: try {
-        var v: ClientProvidersSlice?
-        var hadOneofValue = false
-        if let current = self.value {
-          hadOneofValue = true
-          if case .providers(let m) = current {v = m}
-        }
-        try decoder.decodeSingularMessageField(value: &v)
-        if let v = v {
-          if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.value = .providers(v)
-        }
-      }()
-      default: break
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    // The use of inline closures is to circumvent an issue where the compiler
-    // allocates stack space for every if/case branch local when no optimizations
-    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
-    // https://github.com/apple/swift-protobuf/issues/1182
-    if self.slice != .unspecified {
-      try visitor.visitSingularEnumField(value: self.slice, fieldNumber: 1)
-    }
-    if !self.scope.isEmpty {
-      try visitor.visitSingularStringField(value: self.scope, fieldNumber: 2)
-    }
-    if self.sequence != 0 {
-      try visitor.visitSingularUInt64Field(value: self.sequence, fieldNumber: 3)
-    }
-    switch self.value {
-    case .failure?: try {
-      guard case .failure(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 9)
-    }()
-    case .session?: try {
-      guard case .session(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 10)
-    }()
-    case .workspace?: try {
-      guard case .workspace(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 11)
-    }()
-    case .workspaceDelta?: try {
-      guard case .workspaceDelta(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 12)
-    }()
-    case .outbox?: try {
-      guard case .outbox(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 13)
-    }()
-    case .activity?: try {
-      guard case .activity(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 14)
-    }()
-    case .conversation?: try {
-      guard case .conversation(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 15)
-    }()
-    case .conversationDelta?: try {
-      guard case .conversationDelta(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 16)
-    }()
-    case .metadata?: try {
-      guard case .metadata(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 17)
-    }()
-    case .board?: try {
-      guard case .board(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 18)
-    }()
-    case .navigation?: try {
-      guard case .navigation(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 19)
-    }()
-    case .creation?: try {
-      guard case .creation(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 20)
-    }()
-    case .files?: try {
-      guard case .files(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 21)
-    }()
-    case .fileTree?: try {
-      guard case .fileTree(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 22)
-    }()
-    case .terminals?: try {
-      guard case .terminals(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 23)
-    }()
-    case .terminalOverview?: try {
-      guard case .terminalOverview(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 24)
-    }()
-    case .schedules?: try {
-      guard case .schedules(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 25)
-    }()
-    case .review?: try {
-      guard case .review(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 26)
-    }()
-    case .projectChanges?: try {
-      guard case .projectChanges(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 27)
-    }()
-    case .telemetry?: try {
-      guard case .telemetry(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 29)
-    }()
-    case .processes?: try {
-      guard case .processes(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 31)
-    }()
-    case .screen?: try {
-      guard case .screen(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 32)
-    }()
-    case .boardView?: try {
-      guard case .boardView(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 33)
-    }()
-    case .chats?: try {
-      guard case .chats(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 34)
-    }()
-    case .creationPreview?: try {
-      guard case .creationPreview(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 35)
-    }()
-    case .devices?: try {
-      guard case .devices(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 36)
-    }()
-    case .channels?: try {
-      guard case .channels(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 37)
-    }()
-    case .mail?: try {
-      guard case .mail(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 39)
-    }()
-    case .folders?: try {
-      guard case .folders(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 40)
-    }()
-    case .folder?: try {
-      guard case .folder(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 41)
-    }()
-    case .folderSyncSettings?: try {
-      guard case .folderSyncSettings(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 42)
-    }()
-    case .providers?: try {
-      guard case .providers(let v)? = self.value else { preconditionFailure() }
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 43)
-    }()
-    case nil: break
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every if/case branch local when no optimizations
+      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+      // https://github.com/apple/swift-protobuf/issues/1182
+      if _storage._slice != .unspecified {
+        try visitor.visitSingularEnumField(value: _storage._slice, fieldNumber: 1)
+      }
+      if !_storage._scope.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._scope, fieldNumber: 2)
+      }
+      if _storage._sequence != 0 {
+        try visitor.visitSingularUInt64Field(value: _storage._sequence, fieldNumber: 3)
+      }
+      switch _storage._value {
+      case .failure?: try {
+        guard case .failure(let v)? = _storage._value else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 9)
+      }()
+      case .session?: try {
+        guard case .session(let v)? = _storage._value else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 10)
+      }()
+      case .workspace?: try {
+        guard case .workspace(let v)? = _storage._value else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 11)
+      }()
+      case .workspaceDelta?: try {
+        guard case .workspaceDelta(let v)? = _storage._value else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 12)
+      }()
+      case .outbox?: try {
+        guard case .outbox(let v)? = _storage._value else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 13)
+      }()
+      case .activity?: try {
+        guard case .activity(let v)? = _storage._value else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 14)
+      }()
+      case .conversation?: try {
+        guard case .conversation(let v)? = _storage._value else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 15)
+      }()
+      case .conversationDelta?: try {
+        guard case .conversationDelta(let v)? = _storage._value else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 16)
+      }()
+      case .metadata?: try {
+        guard case .metadata(let v)? = _storage._value else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 17)
+      }()
+      case .board?: try {
+        guard case .board(let v)? = _storage._value else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 18)
+      }()
+      case .navigation?: try {
+        guard case .navigation(let v)? = _storage._value else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 19)
+      }()
+      case .creation?: try {
+        guard case .creation(let v)? = _storage._value else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 20)
+      }()
+      case .files?: try {
+        guard case .files(let v)? = _storage._value else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 21)
+      }()
+      case .fileTree?: try {
+        guard case .fileTree(let v)? = _storage._value else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 22)
+      }()
+      case .terminals?: try {
+        guard case .terminals(let v)? = _storage._value else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 23)
+      }()
+      case .terminalOverview?: try {
+        guard case .terminalOverview(let v)? = _storage._value else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 24)
+      }()
+      case .schedules?: try {
+        guard case .schedules(let v)? = _storage._value else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 25)
+      }()
+      case .review?: try {
+        guard case .review(let v)? = _storage._value else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 26)
+      }()
+      case .projectChanges?: try {
+        guard case .projectChanges(let v)? = _storage._value else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 27)
+      }()
+      case .telemetry?: try {
+        guard case .telemetry(let v)? = _storage._value else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 29)
+      }()
+      case .processes?: try {
+        guard case .processes(let v)? = _storage._value else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 31)
+      }()
+      case .screen?: try {
+        guard case .screen(let v)? = _storage._value else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 32)
+      }()
+      case .boardView?: try {
+        guard case .boardView(let v)? = _storage._value else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 33)
+      }()
+      case .chats?: try {
+        guard case .chats(let v)? = _storage._value else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 34)
+      }()
+      case .creationPreview?: try {
+        guard case .creationPreview(let v)? = _storage._value else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 35)
+      }()
+      case .devices?: try {
+        guard case .devices(let v)? = _storage._value else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 36)
+      }()
+      case .channels?: try {
+        guard case .channels(let v)? = _storage._value else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 37)
+      }()
+      case .mail?: try {
+        guard case .mail(let v)? = _storage._value else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 39)
+      }()
+      case .folders?: try {
+        guard case .folders(let v)? = _storage._value else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 40)
+      }()
+      case .folder?: try {
+        guard case .folder(let v)? = _storage._value else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 41)
+      }()
+      case .folderSyncSettings?: try {
+        guard case .folderSyncSettings(let v)? = _storage._value else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 42)
+      }()
+      case .providers?: try {
+        guard case .providers(let v)? = _storage._value else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 43)
+      }()
+      case nil: break
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: ClientUpdate, rhs: ClientUpdate) -> Bool {
-    if lhs.slice != rhs.slice {return false}
-    if lhs.scope != rhs.scope {return false}
-    if lhs.sequence != rhs.sequence {return false}
-    if lhs.value != rhs.value {return false}
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._slice != rhs_storage._slice {return false}
+        if _storage._scope != rhs_storage._scope {return false}
+        if _storage._sequence != rhs_storage._sequence {return false}
+        if _storage._value != rhs_storage._value {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -29320,7 +30387,7 @@ nonisolated extension ClientConversationSlice: SwiftProtobuf.Message, SwiftProto
 
 nonisolated extension ClientConversationState: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ConversationState"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}runtime\0\u{3}active_turn\0\u{1}working\0\u{3}live_activity\0\u{3}live_reasoning\0\u{3}turn_started_at_millis\0\u{3}responding_model\0\u{3}unsent_task\0\u{3}steerable_id\0\u{4}\u{3}can_start\0\u{1}starting\0\u{3}context_used_tokens\0\u{3}context_window_tokens\0\u{3}unsent_attachments\0\u{3}context_percent\0\u{3}context_near_limit\0\u{3}pending_tools_summary\0\u{3}pending_tool_ids\0\u{3}can_halt\0\u{1}chat\0\u{3}show_reasoning\0\u{2}\u{7}agent\0\u{3}queued_messages\0\u{3}provider_notice\0\u{3}code_review\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}runtime\0\u{3}active_turn\0\u{1}working\0\u{3}live_activity\0\u{3}live_reasoning\0\u{3}turn_started_at_millis\0\u{3}responding_model\0\u{3}unsent_task\0\u{3}steerable_id\0\u{4}\u{3}can_start\0\u{1}starting\0\u{3}context_used_tokens\0\u{3}context_window_tokens\0\u{3}unsent_attachments\0\u{3}context_percent\0\u{3}context_near_limit\0\u{3}pending_tools_summary\0\u{3}pending_tool_ids\0\u{3}can_halt\0\u{1}chat\0\u{3}show_reasoning\0\u{2}\u{7}agent\0\u{3}queued_messages\0\u{3}provider_notice\0\u{3}code_review\0\u{1}memory\0")
 
   fileprivate class _StorageClass {
     var _runtime: String = String()
@@ -29348,6 +30415,7 @@ nonisolated extension ClientConversationState: SwiftProtobuf.Message, SwiftProto
     var _queuedMessages: [ClientQueuedMessageState] = []
     var _providerNotice: ClientProviderNotice? = nil
     var _codeReview: ClientConversationCodeReview? = nil
+    var _memory: ClientConversationMemory? = nil
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -29383,6 +30451,7 @@ nonisolated extension ClientConversationState: SwiftProtobuf.Message, SwiftProto
       _queuedMessages = source._queuedMessages
       _providerNotice = source._providerNotice
       _codeReview = source._codeReview
+      _memory = source._memory
     }
   }
 
@@ -29426,6 +30495,7 @@ nonisolated extension ClientConversationState: SwiftProtobuf.Message, SwiftProto
         case 31: try { try decoder.decodeRepeatedMessageField(value: &_storage._queuedMessages) }()
         case 32: try { try decoder.decodeSingularMessageField(value: &_storage._providerNotice) }()
         case 33: try { try decoder.decodeSingularMessageField(value: &_storage._codeReview) }()
+        case 34: try { try decoder.decodeSingularMessageField(value: &_storage._memory) }()
         default: break
         }
       }
@@ -29513,6 +30583,9 @@ nonisolated extension ClientConversationState: SwiftProtobuf.Message, SwiftProto
       try { if let v = _storage._codeReview {
         try visitor.visitSingularMessageField(value: v, fieldNumber: 33)
       } }()
+      try { if let v = _storage._memory {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 34)
+      } }()
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -29547,6 +30620,7 @@ nonisolated extension ClientConversationState: SwiftProtobuf.Message, SwiftProto
         if _storage._queuedMessages != rhs_storage._queuedMessages {return false}
         if _storage._providerNotice != rhs_storage._providerNotice {return false}
         if _storage._codeReview != rhs_storage._codeReview {return false}
+        if _storage._memory != rhs_storage._memory {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -29605,6 +30679,60 @@ nonisolated extension ClientConversationCodeReview: SwiftProtobuf.Message, Swift
     if lhs.running != rhs.running {return false}
     if lhs.canStart != rhs.canStart {return false}
     if lhs._latest != rhs._latest {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientConversationMemory: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ConversationMemory"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}enabled\0\u{1}shown\0\u{3}can_toggle\0\u{1}dreamer\0\u{1}dream\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBoolField(value: &self.enabled) }()
+      case 2: try { try decoder.decodeSingularBoolField(value: &self.shown) }()
+      case 3: try { try decoder.decodeSingularBoolField(value: &self.canToggle) }()
+      case 4: try { try decoder.decodeSingularBoolField(value: &self.dreamer) }()
+      case 5: try { try decoder.decodeSingularMessageField(value: &self._dream) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if self.enabled != false {
+      try visitor.visitSingularBoolField(value: self.enabled, fieldNumber: 1)
+    }
+    if self.shown != false {
+      try visitor.visitSingularBoolField(value: self.shown, fieldNumber: 2)
+    }
+    if self.canToggle != false {
+      try visitor.visitSingularBoolField(value: self.canToggle, fieldNumber: 3)
+    }
+    if self.dreamer != false {
+      try visitor.visitSingularBoolField(value: self.dreamer, fieldNumber: 4)
+    }
+    try { if let v = self._dream {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 5)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientConversationMemory, rhs: ClientConversationMemory) -> Bool {
+    if lhs.enabled != rhs.enabled {return false}
+    if lhs.shown != rhs.shown {return false}
+    if lhs.canToggle != rhs.canToggle {return false}
+    if lhs.dreamer != rhs.dreamer {return false}
+    if lhs._dream != rhs._dream {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -35597,7 +36725,7 @@ nonisolated extension ClientAdminCreateProject: SwiftProtobuf.Message, SwiftProt
 
 nonisolated extension ClientAdminUpdateProject: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".AdminUpdateProject"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{1}name\0\u{1}summary\0\u{1}prompt\0\u{3}set_hostnames\0\u{1}hostnames\0\u{3}delete_worktrees_on_archive\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{1}name\0\u{1}summary\0\u{1}prompt\0\u{3}set_hostnames\0\u{1}hostnames\0\u{3}delete_worktrees_on_archive\0\u{3}memory_enabled\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -35612,6 +36740,7 @@ nonisolated extension ClientAdminUpdateProject: SwiftProtobuf.Message, SwiftProt
       case 5: try { try decoder.decodeSingularBoolField(value: &self.setHostnames) }()
       case 6: try { try decoder.decodeRepeatedStringField(value: &self.hostnames) }()
       case 7: try { try decoder.decodeSingularBoolField(value: &self._deleteWorktreesOnArchive) }()
+      case 8: try { try decoder.decodeSingularBoolField(value: &self._memoryEnabled) }()
       default: break
       }
     }
@@ -35643,11 +36772,15 @@ nonisolated extension ClientAdminUpdateProject: SwiftProtobuf.Message, SwiftProt
     try { if let v = self._deleteWorktreesOnArchive {
       try visitor.visitSingularBoolField(value: v, fieldNumber: 7)
     } }()
+    try { if let v = self._memoryEnabled {
+      try visitor.visitSingularBoolField(value: v, fieldNumber: 8)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: ClientAdminUpdateProject, rhs: ClientAdminUpdateProject) -> Bool {
     if lhs._deleteWorktreesOnArchive != rhs._deleteWorktreesOnArchive {return false}
+    if lhs._memoryEnabled != rhs._memoryEnabled {return false}
     if lhs.projectID != rhs.projectID {return false}
     if lhs._name != rhs._name {return false}
     if lhs._summary != rhs._summary {return false}

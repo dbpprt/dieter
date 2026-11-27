@@ -159,6 +159,8 @@ final class AppSession {
     let providersModel = ProvidersModel()
     /// The account's code reviewer setting, while Settings shows it.
     let codeReviewerModel = CodeReviewerModel()
+    /// The account's memory setting, while Settings shows it, and projects' memory state.
+    let memoryModel = MemoryModel()
     let worktreeChanges = WorktreeChangesModel()
     let projectChanges = ProjectChangesModel()
     /// Counts `refreshState()` calls; navigating never makes one.
@@ -348,6 +350,7 @@ final class AppSession {
         devicesModel.core = resolved
         providersModel.core = resolved
         codeReviewerModel.core = resolved
+        memoryModel.core = resolved
         screensModel.media = screenMedia
         quickTaskForm.remember = { [weak self] remember in
             Task { await self?.perform { $0.rememberCreation = remember } }

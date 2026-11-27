@@ -103,6 +103,8 @@ func (s *Store) ForkChat(sourceRef, messageID, title string) (model.Card, error)
 		ProviderOptions: source.Card.ProviderOptions,
 		WorkspaceMode:   source.Card.WorkspaceMode, WorkspaceBaseRemote: source.Card.WorkspaceBaseRemote,
 		RemotePublishMode: source.Card.RemotePublishMode,
+		// A fork keeps the agent memory switch, never a dream's role.
+		Memory: source.Card.Memory,
 	})
 	if err != nil {
 		return model.Card{}, err

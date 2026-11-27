@@ -13,6 +13,7 @@ import (
 	"flag"
 	"fmt"
 	hostfolders "github.com/dbpprt/dieter/internal/host/folders"
+	hostmemory "github.com/dbpprt/dieter/internal/host/memory"
 	"log/slog"
 	"net"
 	"net/http"
@@ -210,6 +211,9 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute, mailR
 		if err := seedE2EFixture(data, project, board); err != nil {
 			return err
 		}
+		if err := seedMemoryFixture(data, project); err != nil {
+			return err
+		}
 		// The fixture runs real worker processes: the default reviewer
 		// (Claude Code) would reach a real provider. Reviews use the mock
 		// harness, which answers reviewer prompts deterministically.
@@ -323,6 +327,13 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute, mailR
 					return folders
 				}
 				return nil
+			}(),
+			// Agent memory names the fixture machine, not the host.
+			Memory: func() *hostmemory.Service {
+				if fixtureData != data {
+					return nil
+				}
+				return hostmemory.New(hostmemory.Options{Store: fixtureData, App: application, Log: logger, Name: primaryName})
 			}(),
 		})
 		boardServersMu.Lock()

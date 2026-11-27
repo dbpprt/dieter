@@ -133,6 +133,13 @@ type Request struct {
 	// CodeReviewMaxRounds is the reviewer setting's per-task review limit,
 	// named in the reviewer instructions.
 	CodeReviewMaxRounds int `json:"codeReviewMaxRounds,omitempty"`
+	// MemoryEnabled offers the agent memory_recall and memory_save (and, for
+	// MemoryRole "dreamer", memory_apply), answered by Memory; MemoryCommand
+	// is the CLI equivalent for harnesses that load host tools on demand.
+	MemoryEnabled bool          `json:"memoryEnabled,omitempty"`
+	MemoryRole    string        `json:"memoryRole,omitempty"`
+	MemoryCommand string        `json:"memoryCommand,omitempty"`
+	Memory        MemoryHandler `json:"-"`
 	// SteerEnabled keeps the worker's stdin open for steer frames: Steer
 	// delivers agent channel messages into the running turn, and the worker
 	// answers each with a steer-result Output.
@@ -191,6 +198,8 @@ type Output struct {
 	ProcessCall  *ProcessCall    `json:"processCall,omitempty"`
 	// ReviewCall is a request_code_review call (type code-review).
 	ReviewCall *ProcessCall `json:"reviewCall,omitempty"`
+	// MemoryCall is an agent memory call (type memory).
+	MemoryCall *ProcessCall `json:"memoryCall,omitempty"`
 	// ID, Accepted and Reason answer a SteerCall (type steer-result).
 	ID       string `json:"id,omitempty"`
 	Accepted bool   `json:"accepted,omitempty"`
@@ -473,7 +482,7 @@ func (r *SubprocessRunner) Run(ctx context.Context, request Request, emit func(O
 	}
 	// Host replies and steer frames share the worker's stdin; one line per write.
 	host := &lockedWriter{writer: stdin}
-	if !request.BackgroundProcessesEnabled && !request.SteerEnabled && !request.CodeReviewEnabled {
+	if !request.BackgroundProcessesEnabled && !request.SteerEnabled && !request.CodeReviewEnabled && !request.MemoryEnabled {
 		_ = stdin.Close()
 	}
 	// Code reviews take minutes: each call is answered on its own goroutine,
@@ -549,6 +558,19 @@ func (r *SubprocessRunner) Run(ctx context.Context, request Request, emit func(O
 				defer reviews.Done()
 				replyCodeReview(reviewCtx, host, request.CodeReview, call)
 			}(*output.ReviewCall)
+			continue
+		}
+		if output.Type == "memory" {
+			if err := validMemoryCall(output.MemoryCall); err != nil {
+				return err
+			}
+			// Recall may ask other daemons; like reviews it never blocks this
+			// read loop, and every call ends before Run returns.
+			reviews.Add(1)
+			go func(call ProcessCall) {
+				defer reviews.Done()
+				replyMemory(reviewCtx, host, request.Memory, call)
+			}(*output.MemoryCall)
 			continue
 		}
 		if output.Type == "chunk" {

@@ -37,6 +37,9 @@ type Service struct {
 	// on. Nil (tests and tools without accounts) leaves credentials to the
 	// adapters and records no account.
 	Accounts ProviderAccounts
+	// Memory connects agent memory to turns; nil (tests and tools) runs
+	// turns without memory.
+	Memory MemoryHooks
 
 	channels channelHub
 

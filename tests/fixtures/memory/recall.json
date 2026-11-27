@@ -1,0 +1,158 @@
+{
+  "description": "Recall eval E1 (docs/proposals/agent-memory-implementation.md): synthetic conversations of one project and paraphrased questions a later agent asks. Each query names the conversation that answers it. Queries avoid the conversations' distinctive words where a person would.",
+  "conversations": [
+    {
+      "id": "c_wake",
+      "title": "Offline after sleep",
+      "prompt": "Dieter stays offline for minutes after the MacBook wakes up",
+      "files": ["internal/transport/link/tunnel.go"],
+      "tool": "The tunnel kept its pre-sleep deadline: monotonic time stops during sleep, so the reconnect timer fired late.",
+      "answer": "Root cause: the gateway tunnel's reconnect deadline used the monotonic clock, which pauses while the Mac sleeps. Fix: compare wall clock time on SystemWoke and redial at once."
+    },
+    {
+      "id": "c_401",
+      "title": "Claude turns fail with 401",
+      "prompt": "Claude turns fail with authentication_error 401 roughly every eight hours",
+      "files": ["internal/harness/runtime/claude-resilience.mjs"],
+      "tool": "OAuth access token expired at the 8 h boundary while two processes refreshed at once; one refresh token was rotated away.",
+      "answer": "Two refreshers raced on the same Claude login. Claude Code must be the only refresher; the runner now resumes the session once after a 401."
+    },
+    {
+      "id": "c_scroll",
+      "title": "Transcript jumps while streaming",
+      "prompt": "The Mac chat view jumps to the top when new chunks stream in",
+      "files": ["apps/apple/mac/TranscriptScrollController.swift"],
+      "tool": "SwiftUI ScrollViewReader re-anchors on every layout pass.",
+      "answer": "Scroll position is now owned by a native NSScrollView controller instead of SwiftUI, so streaming no longer moves the viewport."
+    },
+    {
+      "id": "c_ci",
+      "title": "CI fails without sign-off",
+      "prompt": "The pull request check fails with a DCO error",
+      "files": [".github/workflows/ci.yml"],
+      "tool": "Commit 3f8ff43 lacks a Signed-off-by trailer.",
+      "answer": "Every commit needs Signed-off-by; commit with -s through the hooks, never --no-verify."
+    },
+    {
+      "id": "c_emulator",
+      "title": "Android flows hang on the emulator",
+      "prompt": "Maestro Android flows hang at launch on the warm emulator",
+      "files": ["tests/maestro/android/launch.yaml"],
+      "tool": "System UI isn't responding dialog covers the app.",
+      "answer": "Tap Wait on the System UI dialog with uiautomator and force-stop only the E2E app; never wipe the emulator."
+    },
+    {
+      "id": "c_quota",
+      "title": "Usage window shows 0%",
+      "prompt": "Settings shows 0% usage left although the plan has plenty",
+      "files": ["internal/engine/accounts/usage.go"],
+      "tool": "The usage probe parsed seven_day_opus as the session window.",
+      "answer": "The probe now maps five_hour to the session window and ignores model-specific windows."
+    },
+    {
+      "id": "c_fts",
+      "title": "Search misses camelCase names",
+      "prompt": "Searching for scroll controller does not find TranscriptScrollController",
+      "files": ["internal/store/memory/index.go"],
+      "tool": "unicode61 keeps camelCase identifiers as one token.",
+      "answer": "Identifiers are split into words in a separate terms column, so parts of camelCase and snake_case names match."
+    },
+    {
+      "id": "c_release",
+      "title": "Stable promotion stuck",
+      "prompt": "The stable release waits forever in the release workflow",
+      "files": [".github/workflows/release.yml"],
+      "tool": "The environment protection rule needs an approval from the owner.",
+      "answer": "Stable promotion runs release.yml with channel=stable and waits for the owner's approval of the stable environment; never rename release.yml."
+    },
+    {
+      "id": "c_disk",
+      "title": "Builds fail: no space left",
+      "prompt": "Gradle and Xcode builds fail with no space left on device",
+      "files": ["docs/building.md"],
+      "tool": "worktree build outputs 31 GB, old harness runtimes 14 GB",
+      "answer": "Deleted worktree build outputs and unpruned harness runtimes; keep the current runtime digest."
+    },
+    {
+      "id": "c_relay",
+      "title": "File transfer slow over relay",
+      "prompt": "Copying files to another machine is ten times slower over the relay",
+      "files": ["internal/host/filetransfer/send.go"],
+      "tool": "16-frame window and 64 KiB stream buffer cap throughput at 3 MB/s.",
+      "answer": "Raised the WebRTC window and the gateway stream buffer and pipelined chunks; throughput went from 3 to 28 MB/s."
+    },
+    {
+      "id": "c_inbox",
+      "title": "Inbox stale after background",
+      "prompt": "The phone Inbox stays stale after the app comes back from background",
+      "files": ["apps/kotlin/core/src/commonMain/kotlin/Connection.kt"],
+      "tool": "A dead pooled OkHttp connection was reused.",
+      "answer": "Each session renews its connections when the app returns to the foreground; a refreshing indicator shows on the Inbox."
+    },
+    {
+      "id": "c_vault",
+      "title": "Vault secret visible in transcript",
+      "prompt": "A revealed vault password showed up in the conversation",
+      "files": ["internal/store/conversations/redact.go"],
+      "tool": "The reveal output was stored before redaction.",
+      "answer": "Vault values are redacted before transcripts are written; reveals go only to the tool output, never the stored text."
+    },
+    {
+      "id": "c_pins",
+      "title": "Pins do not sync from the phone",
+      "prompt": "Pinning a chat on the phone never reaches the Mac",
+      "files": ["internal/replication/peersync/pull.go"],
+      "tool": "The first machine lagged behind and held invalid provenance pages.",
+      "answer": "Records with invalid provenance are held instead of stalling the page; the lagging replica catches up."
+    },
+    {
+      "id": "c_title",
+      "title": "Quick titles never change",
+      "prompt": "New cards keep their fallback title",
+      "files": ["internal/engine/titles.go"],
+      "tool": "Codex rejects injected-token turns without a global model_provider.",
+      "answer": "The Codex home declares agent_bridge_openai globally, so quick title turns succeed again."
+    },
+    {
+      "id": "c_glass",
+      "title": "Navigation bar redraws constantly",
+      "prompt": "The Android glass navigation bar burns CPU while idle",
+      "files": ["apps/kotlin/ui/src/main/kotlin/GlassNav.kt"],
+      "tool": "The blur layer invalidated itself every frame.",
+      "answer": "The glass effect now redraws only when content behind it scrolls."
+    },
+    {
+      "id": "c_turnfail",
+      "title": "Codex shows Reconnecting and fails",
+      "prompt": "Codex turns end as failed after Reconnecting... although the answer arrived",
+      "files": ["internal/harness/runtime/codex-runtime.mjs"],
+      "tool": "A transient reconnect notice was treated as a terminal error.",
+      "answer": "Reconnecting notices are informational; the turn fails only when the stream ends without a result."
+    }
+  ],
+  "queries": [
+    {
+      "query": "why is the machine unreachable for a while after the laptop lid opens",
+      "answer": "c_wake"
+    },
+    { "query": "network comes back late after resume from sleep", "answer": "c_wake" },
+    { "query": "anthropic authentication errors every few hours", "answer": "c_401" },
+    { "query": "token refresh race between processes", "answer": "c_401" },
+    { "query": "chat viewport moves while the reply is streaming on mac", "answer": "c_scroll" },
+    { "query": "commit rejected because of missing signoff", "answer": "c_ci" },
+    { "query": "android device test stuck on startup dialog", "answer": "c_emulator" },
+    { "query": "plan usage percentage is wrong", "answer": "c_quota" },
+    { "query": "search does not match parts of identifiers", "answer": "c_fts" },
+    { "query": "release to stable waiting for approval", "answer": "c_release" },
+    { "query": "disk full during builds", "answer": "c_disk" },
+    { "query": "slow throughput sending files between machines", "answer": "c_relay" },
+    { "query": "mobile inbox not refreshing when reopened", "answer": "c_inbox" },
+    { "query": "password leaked into the chat history", "answer": "c_vault" },
+    { "query": "pinned conversations from mobile missing on desktop", "answer": "c_pins" },
+    { "query": "automatic card titles are not generated", "answer": "c_title" },
+    { "query": "high cpu from blurred bottom bar", "answer": "c_glass" },
+    { "query": "turn marked failed even though it finished", "answer": "c_turnfail" },
+    { "query": "TranscriptScrollController", "answer": "c_scroll" },
+    { "query": "claude-resilience", "answer": "c_401" }
+  ]
+}

@@ -1,0 +1,145 @@
+# Agent memory: turn memory on for the project, start a dream and apply and
+# undo what it staged, save Settings › Agent memory, and turn the project's
+# memory off again. The fixture saved one memory and a memory setting on the
+# mock harness whose dreams verify that memory and wait for review.
+appId: ${APP_ID}
+name: Agent memory
+tags: [smoke]
+---
+- runFlow: common/launch.yaml
+- tapOn:
+    text: "Projects"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: "Isolated E2E"
+    timeout: 40000
+- tapOn:
+    text: "Isolated E2E"
+    waitToSettleTimeoutMs: 500
+- runFlow:
+    file: common/project-memory.yaml
+- takeScreenshot: memory-project-on
+# The project's settings now show its memory and can start a dream.
+- tapOn:
+    id: chrome-project-menu
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    text: "Edit project.*"
+    waitToSettleTimeoutMs: 500
+- scrollUntilVisible:
+    element:
+      id: project-memory-dream
+    direction: DOWN
+    timeout: 20000
+- extendedWaitUntil:
+    visible: ".*1 saved memory.*"
+    timeout: 20000
+- tapOn:
+    id: project-memory-dream
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible:
+      id: project-memory-open-dream
+    timeout: 30000
+- takeScreenshot: memory-dream-started
+- tapOn:
+    id: project-memory-open-dream
+    waitToSettleTimeoutMs: 500
+# A safety bound: mock turns take seconds, but hosted macOS runners shared with
+# the simulator have stalled worker start-up for minutes.
+- extendedWaitUntil:
+    visible: "Dream awaiting review"
+    timeout: 300000
+- assertVisible: ".*1 verified.*"
+- takeScreenshot: memory-dream-staged
+- tapOn:
+    text: "Apply"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: "Dream applied"
+    timeout: 30000
+- tapOn:
+    text: "Undo"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: "Dream undone"
+    timeout: 30000
+- takeScreenshot: memory-dream-undone
+# Flows share one fixture and run in file order: move the dream out of Running
+# so later flows find the board as they expect it (as reviewer.yaml does).
+- repeat:
+    while:
+      notVisible:
+        id: move-review
+    times: 15
+    commands:
+      - runFlow:
+          when:
+            visible:
+              id: composer-chips
+          commands:
+            - swipe:
+                from:
+                  id: composer-chips
+                direction: LEFT
+      - waitForAnimationToEnd:
+          timeout: 2000
+- extendedWaitUntil:
+    visible:
+      id: move-review
+    timeout: 60000
+- tapOn:
+    id: move-review
+    waitToSettleTimeoutMs: 500
+# The account's memory setting: the fixture saved the mock harness.
+- runFlow: common/back.yaml
+- runFlow:
+    file: common/more.yaml
+    env:
+      PLACE: settings
+- scrollUntilVisible:
+    element:
+      id: settings-agent-memory
+    timeout: 20000
+# Rows under a floating bar (iOS, Android's glass navigation) count as visible
+# before the list has scrolled past them, so scroll to the next section too.
+- scrollUntilVisible:
+    element:
+      text: "Synced folders"
+    timeout: 20000
+- tapOn:
+    id: settings-agent-memory
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible:
+      id: memory-settings
+    timeout: 20000
+- takeScreenshot: memory-settings
+# Save saves a change only: switch automatic dreams on and save. The fixture
+# runs no dream scheduler, so the setting can stay on.
+- tapOn:
+    id: memory-dreaming
+    waitToSettleTimeoutMs: 500
+- scrollUntilVisible:
+    element:
+      id: memory-save
+    timeout: 20000
+- tapOn:
+    id: memory-save
+    waitToSettleTimeoutMs: 500
+- assertNotVisible: ".*refused.*|.*failed.*"
+# Memory off again for the flows after this one.
+- runFlow: common/back.yaml
+- tapOn:
+    text: "Projects"
+    waitToSettleTimeoutMs: 500
+- runFlow:
+    when:
+      notVisible:
+        id: chrome-project-menu
+    commands:
+      - tapOn:
+          text: "Isolated E2E"
+          waitToSettleTimeoutMs: 500
+- runFlow:
+    file: common/project-memory.yaml

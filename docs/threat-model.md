@@ -522,6 +522,36 @@ unsandboxed, as the daemon user, on the configured provider account.
   malicious peer daemon of the same account can change the reviewer, as it can
   any shared setting.
 
+### Agent memory
+
+Agent memory (`MemoryService`, `internal/host/memory`) stores what earlier
+conversations of a project did and lets later agent turns read it.
+
+- **Recalled text is untrusted.** Every indexed passage and saved memory was
+  written by an agent or taken from a tool result, so it can carry injected
+  instructions from a web page, a file or another agent. The tools and the
+  turn instructions present recall as possibly outdated notes to verify, never
+  as instructions; recall grants no capability. A poisoned memory has the
+  reach of the prompt injection it carries (see above), and the person sees,
+  forgets or undoes it.
+- **Secrets.** Transcripts are vault-redacted when stored; indexing scrubs
+  common credential formats (provider keys, tokens, private keys, passwords in
+  URLs) and `<private>` blocks again and skips reasoning and Dieter's own host
+  tool traffic. A secret in a format the scrubber does not know can reach the
+  index and the recall of other conversations of the same project.
+- **Scope.** An agent turn recalls and saves only in its own conversation's
+  project, enforced by the daemon from the turn token; the model never chooses
+  the project. Only dream turns (role `dreamer`, set by Dieter at creation)
+  can change saved memories in bulk, in one validated, bounded and undoable
+  batch.
+- **Across machines.** Recall reaches other daemons of the same account only
+  over the roster-pinned peer carriers; the gateway relays opaque tunnels and
+  stores nothing of it. Saved memories replicate like other KV records. A
+  malicious peer daemon of the same account can answer recall with anything
+  and write saved memories, as it can change any shared record.
+- **At rest.** The index is a 0600 SQLite file in `DIETER_HOME`, readable by
+  the daemon user like the transcripts it is derived from.
+
 ### Local attackers on a daemon host
 
 - Other local users, containers sharing the host network, and request-forgery

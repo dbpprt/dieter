@@ -1,0 +1,213 @@
+{
+  "date": "2026-11-27",
+  "machine": "Apple Silicon, macOS 27",
+  "index": "SQLite FTS5 via modernc.org/sqlite v1.63.0 (pure Go), porter unicode61, bm25(title 2.0, body 1.0), OR query without stopwords, grouped by card",
+  "eval": {
+    "cards": 44,
+    "cases": 18,
+    "dbBytes": 18534400,
+    "hitAt1": 14,
+    "hitAt3": 17,
+    "hitAt5": 17,
+    "indexSeconds": 10.461327542,
+    "label": "dieter-builtin-fts5-bm25",
+    "maxMs": 53.174,
+    "mrr": 0.859,
+    "msPerObs": 0.43180449671853716,
+    "observations": 24227,
+    "p50ms": 4.711
+  },
+  "rows": [
+    {
+      "query": "Mac stays disconnected after waking from sleep",
+      "rank": 1,
+      "ms": 6.733,
+      "top3": [
+        "c_2c968e12cbcb9b753c743eda",
+        "c_690d7259050be74b8f76fff3",
+        "c_2abfac4aea13510623a02eff"
+      ]
+    },
+    {
+      "query": "card snaps back to its old lane after dragging until sync finishes",
+      "rank": 1,
+      "ms": 2.818,
+      "top3": [
+        "c_9e3d656aa4b3f2d131fca4f8",
+        "c_2abfac4aea13510623a02eff",
+        "c_f655dd266c6bf6aa379543df"
+      ]
+    },
+    {
+      "query": "typing lag and lost characters in the Android chat composer",
+      "rank": 2,
+      "ms": 3.431,
+      "top3": [
+        "c_110345b8db323582a785d65c",
+        "c_4bc088a8ee14bc855ffa1bc6",
+        "c_a575740181cb5475bbd3ee31"
+      ]
+    },
+    {
+      "query": "make the gateway unable to read relayed traffic",
+      "rank": 1,
+      "ms": 8.804,
+      "top3": [
+        "c_f696fe71ce67323d7741f6ec",
+        "c_24ff8ea83511ef4160d7ae6d",
+        "c_4bc088a8ee14bc855ffa1bc6"
+      ]
+    },
+    {
+      "query": "store passwords and one-time codes that agents can request",
+      "rank": 1,
+      "ms": 3.983,
+      "top3": [
+        "c_6a2336d6bad3fefbe6ae5256",
+        "c_5def4a1b1001ac17eec839bf",
+        "c_8d9af7079e5b9a590d5da132"
+      ]
+    },
+    {
+      "query": "conversation fails but works again when I send another message",
+      "rank": 1,
+      "ms": 4.711,
+      "top3": [
+        "c_d41d7d280d689caeef578e1f",
+        "c_2b5841014d516c60a58cf19e",
+        "c_e809195040376175efa46dd0"
+      ]
+    },
+    {
+      "query": "screen share should reconnect instead of opening new connections on a flaky network",
+      "rank": 3,
+      "ms": 9.771,
+      "top3": [
+        "c_4ae4d1da2bd1b8f77c9b7d3d",
+        "c_72de4dee644b5493c621b516",
+        "c_8c78397d41fe38c53be91c22"
+      ]
+    },
+    {
+      "query": "presented file opens again every time I return to the chat",
+      "rank": 1,
+      "ms": 5.835,
+      "top3": [
+        "c_3fc6bf8294de8e0d0721d3ab",
+        "c_4bc088a8ee14bc855ffa1bc6",
+        "c_2abfac4aea13510623a02eff"
+      ]
+    },
+    {
+      "query": "notch covers the status badges in the top bar",
+      "rank": 2,
+      "ms": 6.015,
+      "top3": [
+        "c_ac36bb61667b39a9dc85c94f",
+        "c_bed9938a20d5a1217d47640e",
+        "c_430635f7cbcff66f819c54fc"
+      ]
+    },
+    {
+      "query": "background waiters never come back in Claude and Oh My Pi",
+      "rank": 1,
+      "ms": 3.771,
+      "top3": [
+        "c_37b6ecbfda981defda3292cc",
+        "c_4025be5baf79330a9e739a9e",
+        "c_2b0231a71f7ce52552b5c5a6"
+      ]
+    },
+    {
+      "query": "quick task text disappears when opening more options on Android",
+      "rank": 1,
+      "ms": 10.063,
+      "top3": ["c_a575740181cb5475bbd3ee31"]
+    },
+    {
+      "query": "do workflow runs or the repository leak credentials",
+      "rank": 1,
+      "ms": 3.987,
+      "top3": [
+        "c_610916ddd1068bae9cfed9c1",
+        "c_8d9af7079e5b9a590d5da132",
+        "c_d41d7d280d689caeef578e1f"
+      ]
+    },
+    {
+      "query": "deploy the gateway from the main repository instead of the vps repo",
+      "rank": 1,
+      "ms": 4.548,
+      "top3": [
+        "c_6a6c24215b4b15574f9e8ecc",
+        "c_24ff8ea83511ef4160d7ae6d",
+        "c_3fc6bf8294de8e0d0721d3ab"
+      ]
+    },
+    {
+      "query": "high CPU usage and slow clicks in the native Mac app",
+      "rank": 1,
+      "ms": 53.174,
+      "top3": [
+        "c_2abfac4aea13510623a02eff",
+        "c_2b0231a71f7ce52552b5c5a6",
+        "c_5ed56869c6d61284ba960080"
+      ]
+    },
+    {
+      "query": "move business rules into one shared Kotlin multiplatform layer",
+      "rank": 1,
+      "ms": 3.969,
+      "top3": [
+        "c_110345b8db323582a785d65c",
+        "c_a86c9cfda23f3832fa62d8a6",
+        "c_4bc088a8ee14bc855ffa1bc6"
+      ]
+    },
+    {
+      "query": "right click to delete a board on macOS",
+      "rank": 1,
+      "ms": 2.881,
+      "top3": [
+        "c_f99f060f1f5a34f598de4ec9",
+        "c_5ed56869c6d61284ba960080",
+        "c_2abfac4aea13510623a02eff"
+      ]
+    },
+    {
+      "query": "why are builds and emulator tests so slow",
+      "rank": 7,
+      "ms": 10.591,
+      "top3": [
+        "c_2abfac4aea13510623a02eff",
+        "c_8c78397d41fe38c53be91c22",
+        "c_a575740181cb5475bbd3ee31"
+      ]
+    },
+    {
+      "query": "remove board comments from the daemon and every client",
+      "rank": 1,
+      "ms": 2.984,
+      "top3": [
+        "c_e809195040376175efa46dd0",
+        "c_24ff8ea83511ef4160d7ae6d",
+        "c_4025be5baf79330a9e739a9e"
+      ]
+    }
+  ],
+  "peakRssMB": 51,
+  "liveTurn": {
+    "harness": "claude-code",
+    "model": "sonnet",
+    "effort": "low",
+    "project": "empty git dir",
+    "toolSequence": ["ToolSearch", "memory_recall", "memory_recall", "memory_recall"],
+    "memoryRecallMs": [27, 38, 20],
+    "wallSeconds": 13.3,
+    "usage": {
+      "inputTokens": 110474,
+      "outputTokens": 987
+    },
+    "outcome": "correct card, PR #144, commit and diagnosis note; said the snippets did not state the root cause and offered to read the transcript (did not read it, unlike the agentmemory turn)"
+  }
+}

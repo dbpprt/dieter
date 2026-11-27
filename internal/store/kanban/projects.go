@@ -411,6 +411,25 @@ func (s *Store) UpdateProjectWithHostnames(ref string, name, summary, prompt, pa
 	return s.saveProject(project)
 }
 
+// SetProjectMemory turns agent memory on or off for a project; the setting
+// replicates to every daemon of the account.
+func (s *Store) SetProjectMemory(ref string, enabled bool) (model.Project, error) {
+	release, err := s.home.BeginWrite()
+	if err != nil {
+		return model.Project{}, err
+	}
+	defer release()
+	project, err := s.ResolveProject(ref)
+	if err != nil {
+		return model.Project{}, err
+	}
+	if project.MemoryEnabled == enabled {
+		return project, nil
+	}
+	project.MemoryEnabled, project.UpdatedAt = enabled, home.Timestamp()
+	return s.saveProject(project)
+}
+
 func (s *Store) UpdateProjectPromptTemplate(ref, template string) (model.Project, error) {
 	template = strings.TrimSpace(template)
 	if template != "" {

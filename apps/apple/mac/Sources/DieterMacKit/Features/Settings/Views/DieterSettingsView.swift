@@ -9,6 +9,7 @@ enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
     case folders = "Folders"
     case providers = "Providers"
     case codeReviewer = "Code reviewer"
+    case memory = "Agent memory"
     case prompts = "Prompts"
     case notifications = "Notifications"
     case island = "Island"
@@ -29,6 +30,7 @@ enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .folders: "folder"
         case .providers: "key.horizontal"
         case .codeReviewer: "eye"
+        case .memory: "clock.arrow.circlepath"
         case .prompts: "text.quote"
         case .notifications: "bell"
         case .island: "capsule.tophalf.filled"
@@ -46,6 +48,7 @@ enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .folders: "This Mac's copies of your synced folders"
         case .providers: "Claude and ChatGPT accounts"
         case .codeReviewer: "The reviewer agents ask to check their changes"
+        case .memory: "Dreams that keep projects' saved memories tidy"
         case .prompts: "Global and scoped agent instructions"
         case .notifications: "macOS alerts for agent activity"
         case .island: "Live activity around the notch"
@@ -112,6 +115,7 @@ struct DieterSettingsView: View {
                         case .folders: FolderSettingsPage()
                         case .providers: ProvidersSettings()
                         case .codeReviewer: CodeReviewerSettings()
+                        case .memory: MemorySettings()
                         case .prompts: PromptSettingsEditor()
                         case .notifications: NotificationSettings()
                         case .island: IslandSettings()

@@ -136,7 +136,7 @@ internal fun SettingsScreen(store: MobileStore) {
             }
             item("conversation") {
                 SectionHeader("Conversations")
-                Group(listOf(0, 1)) { index, position ->
+                Group(listOf(0, 1, 2)) { index, position ->
                     if (index == 0)
                         ListRow(
                             "Show reasoning",
@@ -155,7 +155,7 @@ internal fun SettingsScreen(store: MobileStore) {
                                 )
                             },
                         )
-                    else
+                    else if (index == 1)
                         ListRow(
                             "Code reviewer",
                             Modifier.testTag("settings-code-reviewer"),
@@ -165,6 +165,17 @@ internal fun SettingsScreen(store: MobileStore) {
                             tile = Color(0xFF5E5CE6),
                             accessory = Accessory.CHEVRON,
                             onClick = { store.push(MobileRoute.CodeReviewer) },
+                        )
+                    else
+                        ListRow(
+                            "Agent memory",
+                            Modifier.testTag("settings-agent-memory"),
+                            position = position,
+                            subtitle = "Dreams that keep projects’ saved memories tidy",
+                            glyph = Glyph.HISTORY,
+                            tile = Color(0xFF30B0C7),
+                            accessory = Accessory.CHEVRON,
+                            onClick = { store.push(MobileRoute.AgentMemory) },
                         )
                 }
             }

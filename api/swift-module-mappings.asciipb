@@ -14,6 +14,7 @@ mapping {
   proto_file_path: "dieter/v1/git.proto"
   proto_file_path: "dieter/v1/kv.proto"
   proto_file_path: "dieter/v1/machine.proto"
+  proto_file_path: "dieter/v1/memory.proto"
   proto_file_path: "dieter/v1/peer.proto"
   proto_file_path: "dieter/v1/projects.proto"
   proto_file_path: "dieter/v1/provider_accounts.proto"

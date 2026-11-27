@@ -157,9 +157,11 @@ struct ConversationBreadcrumb: View {
                         .help(badge.accessibilityLabel)
                 }
                 // What the agent may use beyond its workspace: the vault and
-                // mail, fixed at creation, and the code reviewer, switchable.
+                // mail, fixed at creation, and the code reviewer and agent
+                // memory, switchable.
                 let reviewing = context.codeReview?.enabled == true
-                if card.vaultAccess || card.mailAccess || reviewing {
+                let remembering = context.memory.map { $0.shown && $0.enabled } == true
+                if card.vaultAccess || card.mailAccess || reviewing || remembering {
                     Text("·")
                     HStack(spacing: 6) {
                         if card.vaultAccess {
@@ -176,6 +178,12 @@ struct ConversationBreadcrumb: View {
                                 .help("This conversation's agent can ask the code reviewer to check its changes")
                                 .accessibilityIdentifier("conversation.code-review")
                                 .e2eTarget("conversation.code-review")
+                        }
+                        if remembering {
+                            Label("Memory", systemImage: "clock.arrow.circlepath")
+                                .help("This conversation's agent recalls and saves what its project learned")
+                                .accessibilityIdentifier("conversation.memory")
+                                .e2eTarget("conversation.memory")
                         }
                     }
                     .labelStyle(.titleAndIcon)
