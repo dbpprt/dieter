@@ -115,23 +115,8 @@ tags: [smoke]
       id: memory-settings
     timeout: 20000
 - takeScreenshot: memory-settings
-# Save saves a change only: switch automatic dreams on, save, then restore.
-- tapOn:
-    id: memory-dreaming
-    waitToSettleTimeoutMs: 500
-- scrollUntilVisible:
-    element:
-      id: memory-save
-    timeout: 20000
-- tapOn:
-    id: memory-save
-    waitToSettleTimeoutMs: 500
-- assertNotVisible: ".*refused.*|.*failed.*"
-- scrollUntilVisible:
-    element:
-      id: memory-dreaming
-    direction: UP
-    timeout: 20000
+# Save saves a change only: switch automatic dreams on and save. The fixture
+# runs no dream scheduler, so the setting can stay on.
 - tapOn:
     id: memory-dreaming
     waitToSettleTimeoutMs: 500
