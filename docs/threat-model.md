@@ -15,7 +15,8 @@ today, with pointers into the code. It complements the user-facing
 | Source code, working trees and build outputs                                                                                        | Daemon hosts (Git checkouts)                                                         |
 | Transcripts, prompts, attachments, queues, schedules                                                                                | Daemon `DIETER_HOME` (central store)                                                 |
 | Provider logins: per-account Claude Code directories with their Keychain item or `.credentials.json`, Codex auth homes, `siwc.json` | The machine that signed in only: `DIETER_HOME/provider-accounts/<id>/`, user-only    |
-| Host logins and other harness credentials (`~/.claude`, `~/.codex`, Pi, OMP, DSH; API keys in the daemon environment)               | Daemon hosts, in each tool's normal configuration; Strix's in a vault item           |
+| Host logins and other harness credentials (`~/.claude`, `~/.codex`, Pi, DSH; API keys in the daemon environment)                    | Daemon hosts, in each tool's normal configuration; Strix's in a vault item           |
+| Access tokens served to Oh My Pi turns (no refresh tokens)                                                                          | The turn's OMP process memory only; never written anywhere                           |
 | Provider accounts, each machine's login state and usage (no secrets)                                                                | KV records replicated to every daemon; every client's replica                        |
 | Provider token ledger and sign-in audit (no secrets)                                                                                | `DIETER_HOME/provider-accounts/ledger.ndjson` and `audit.ndjson`, user-only          |
 | Daemon identity key (`identity-key.pem`): enrollment and roster key                                                                 | Daemon `DIETER_HOME`                                                                 |
@@ -315,6 +316,66 @@ to an account it controls, which is within operator access. A person who
 approves a device code they did not start in their own app links their
 subscription to whichever machine started it.
 
+### Oh My Pi turns on provider accounts
+
+Oh My Pi (OMP) turns run on the conversation's provider accounts
+([ADR 0007](adr/0007-oh-my-pi-managed-accounts.md)): a ChatGPT login signed in
+with Codex, and a Claude login only after a person turned on its Oh My Pi
+access. OMP holds no login of its own. Its managed agent directory,
+`DIETER_HOME/omp/agent`, keeps sessions and settings but no credentials, and
+Dieter ignores the host's `~/.omp`, `OMP_PROFILE` and OMP's own logins, models
+and settings. The rendered `models.yml` makes OMP run
+`dieter provider token --turn --provider claude|chatgpt` whenever it needs a
+provider's access token.
+
+**What travels:** the access token of each account the turn uses, from the
+daemon over the loopback API to the helper, and from the helper's output into
+the OMP process, which keeps it in memory and sends it to the provider. No
+token is written to a file, an environment variable, the vault, a KV record or
+a log, and none leaves the machine.
+
+**Can:**
+
+- The OMP process holds the access tokens of its turn's accounts: the
+  implementation model's and, with an advisor on the other provider, the
+  advisor's.
+- The agent's own tools inside an OMP turn run with `DIETER_TURN_TOKEN`, so
+  they can run the helper too and read the turn's access tokens, as a Sign in
+  with ChatGPT turn can read its own. A prompt-injected agent can send them
+  anywhere.
+- OMP's Claude requests imitate Claude Code. Anthropic may block them or
+  suspend the account. That is an account risk the person accepts with the
+  switch, not a confidentiality issue.
+
+**Mitigations:**
+
+- Access tokens only. From Claude Code's store the daemon decodes only the
+  access token and its expiry; it never reads, uses or stores the refresh
+  token, and Claude Code stays the only refresher, prompted by its usage probe
+  under the account lock (`internal/engine/accounts/omp.go`). A leaked token
+  lapses (a Claude access token after hours, a ChatGPT one after days) and
+  cannot renew the login.
+- Opt-in per Claude account, off by default. Turning it on or off is a
+  `ProviderAccountService` mutation that refuses a turn token, so an agent
+  cannot grant itself a Claude login.
+- `GetProviderTurnToken` with a provider answers only on the local route, only
+  to a live turn token of an OMP conversation, and only with that turn's own
+  account for the provider (`internal/api/provider_accounts.go`). A turn
+  cannot fetch another conversation's or another account's token, and the CLI
+  refuses `--machine`.
+- The OMP worker's environment drops every inherited `ANTHROPIC_*`,
+  `OPENAI_*` and `CODEX_*` variable (also when `DIETER_HARNESS_ENV` names
+  one), `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CONFIG_DIR` and `OMP_PROFILE`
+  (`internal/harness/omp_home.go`), and every OMP chat role is pinned to the
+  implementation model, so no request reaches an account the turn did not
+  choose.
+
+**Residual risk:** the Claude Code Keychain item is no stronger boundary than
+the helper for processes of the same OS user: any of them, an agent included,
+can read it with `security` or run `claude` with the account's directory (see
+prompt injection). A leaked access token works until it expires or the
+provider ends the login's session.
+
 ### Prompt injection against unsandboxed agents
 
 Agents read untrusted text all the time: web pages, issues, dependency sources,
@@ -377,7 +438,9 @@ data to its model provider or any network destination.
   process of a turn holds its account's current access token, and a turn on a
   Sign in with ChatGPT account can fetch it (`GetProviderTurnToken`, local
   route, its own account only), because Codex renews 1-hour tokens that way
-  inside long turns.
+  inside long turns. An Oh My Pi turn can fetch the access tokens of its own
+  accounts the same way, Claude ones included when the account has Oh My Pi
+  access ([Oh My Pi turns](#oh-my-pi-turns-on-provider-accounts)).
 - Harness workers start with an allowlisted environment (basic user variables,
   provider keys and proxy settings), plus only the names listed in
   `DIETER_HARNESS_ENV` (`Environment.harnessEnvironment` in

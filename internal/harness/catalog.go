@@ -73,7 +73,6 @@ type Catalog struct {
 	// Discovery seams; tests replace them on their own catalog.
 	discoverProvider func(context.Context, string) ([]Model, error)
 	runDiscovery     func(context.Context, string, ...string) ([]byte, error)
-	runOMPDiscovery  func(context.Context) ([]byte, error)
 	runDSHDiscovery  func(context.Context) ([]byte, error)
 }
 
@@ -103,7 +102,6 @@ func NewCatalog(options CatalogOptions) (*Catalog, error) {
 	}
 	c.discoverProvider = c.discoverModels
 	c.runDiscovery = c.runDiscoveryCommand
-	c.runOMPDiscovery = c.runOMPDiscoveryCommand
 	c.runDSHDiscovery = c.runDSHDiscoveryCommand
 	return c, nil
 }

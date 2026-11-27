@@ -36,6 +36,11 @@ struct AgentPickerFields: View {
             }
             .disabled(!controls.accountEnabled)
             .accessibilityIdentifier("agent-fields.account")
+        } else if !controls.accountHint.isEmpty {
+            LabeledContent("Account") {
+                Text(controls.accountHint).foregroundStyle(.secondary)
+            }
+            .accessibilityIdentifier("agent-fields.account-hint")
         }
         Picker("Model", selection: Binding(get: { controls.selection.model }, set: { choose(.model($0)) })) {
             ForEach(controls.models, id: \.id) { Text($0.name).tag($0.id) }

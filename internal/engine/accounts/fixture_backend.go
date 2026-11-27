@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -35,12 +36,16 @@ type FixtureBackend struct {
 	// HostClaude is the host's own Claude Code login, if any.
 	HostClaude *Identity
 
-	mu      sync.Mutex
-	probes  map[string]int
-	reset   map[string]bool
-	redeem  map[string]bool
-	calls   []string
-	refresh int
+	mu     sync.Mutex
+	probes map[string]int
+	// claudeTokens counts each Claude config directory's refreshes; an
+	// expired entry makes ReadClaudeToken report a past expiry.
+	claudeTokens  map[string]int
+	claudeExpired map[string]bool
+	reset         map[string]bool
+	redeem        map[string]bool
+	calls         []string
+	refresh       int
 }
 
 // NewFixtureBackend returns a fixture backend with its default identities.
@@ -300,6 +305,14 @@ func (f *FixtureBackend) ProbeClaudeUsage(ctx context.Context, configDir string)
 	}
 	n := f.probes["claude:"+configDir]
 	f.probes["claude:"+configDir]++
+	// Like Claude Code, the probe's request renews a due login first.
+	if f.claudeExpired[configDir] {
+		delete(f.claudeExpired, configDir)
+		if f.claudeTokens == nil {
+			f.claudeTokens = map[string]int{}
+		}
+		f.claudeTokens[configDir]++
+	}
 	f.mu.Unlock()
 	now := f.now().UTC().Truncate(time.Hour)
 	return ClaudeProbe{LoggedIn: true, Identity: status.Identity, Usage: Usage{
@@ -309,6 +322,36 @@ func (f *FixtureBackend) ProbeClaudeUsage(ctx context.Context, configDir string)
 			{Kind: "weekly", Label: "Weekly", UsedPercent: 40, ResetsAt: now.Add(72 * time.Hour).Format(time.RFC3339), DurationMinutes: 10080},
 		},
 	}}, nil
+}
+
+// ReadClaudeToken returns a deterministic fixture access token for a signed-in
+// Claude config directory; each refresh yields a new one.
+func (f *FixtureBackend) ReadClaudeToken(ctx context.Context, configDir string) (ClaudeToken, error) {
+	f.record("ReadClaudeToken:" + configDir)
+	status, _ := f.CheckClaude(ctx, configDir)
+	if !status.LoggedIn {
+		return ClaudeToken{}, errors.New("no fixture Claude login")
+	}
+	f.mu.Lock()
+	generation, expired := f.claudeTokens[configDir], f.claudeExpired[configDir]
+	f.mu.Unlock()
+	expires := f.now().Add(8 * time.Hour)
+	if expired {
+		expires = f.now().Add(-time.Minute)
+	}
+	sum := ClaudeCredentialsService(configDir)
+	return ClaudeToken{AccessToken: fmt.Sprintf("sk-ant-oat01-fixture-%s-%d", strings.TrimPrefix(sum, claudeCredentialsService), generation), ExpiresAt: expires}, nil
+}
+
+// ExpireClaudeToken makes a fixture Claude login's access token expired until
+// the next usage probe refreshes it.
+func (f *FixtureBackend) ExpireClaudeToken(configDir string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.claudeExpired == nil {
+		f.claudeExpired = map[string]bool{}
+	}
+	f.claudeExpired[configDir] = true
 }
 
 func (f *FixtureBackend) ProbeCodexUsage(_ context.Context, home CodexAuthHome) (Usage, error) {

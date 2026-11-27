@@ -10,17 +10,17 @@ slug: "harnesses"
 Dieter integrates six harnesses through a pinned JavaScript runtime. The coding
 agents use their normal local configuration on the **execution machine**.
 
-| Harness                | Sign-in and configuration                                                                                   |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Codex                  | a [ChatGPT account](/docs/providers/); Dieter's own `DIETER_HOME/codex`, set up from `~/.codex/config.toml` |
-| Claude Code            | a [Claude account](/docs/providers/); settings, skills and agents shared from `~/.claude`                   |
-| Pi                     | `~/.pi/agent` or `PI_AGENT_DIR`                                                                             |
-| Oh My Pi               | `~/.omp/agent`, with `OMP_PROFILE` when set                                                                 |
-| DeepSeek Harness (DSH) | `~/.dsh` or `DSH_HOME`                                                                                      |
-| Strix                  | a vault item and Docker; see [Strix](#strix)                                                                |
+| Harness                | Sign-in and configuration                                                                                                             |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Codex                  | a [ChatGPT account](/docs/providers/); Dieter's own `DIETER_HOME/codex`, set up from `~/.codex/config.toml`                           |
+| Claude Code            | a [Claude account](/docs/providers/); settings, skills and agents shared from `~/.claude`                                             |
+| Pi                     | `~/.pi/agent` or `PI_AGENT_DIR`                                                                                                       |
+| Oh My Pi               | a [Claude or ChatGPT account](/docs/providers/), following the model; Dieter's own `DIETER_HOME/omp/agent`; see [Oh My Pi](#oh-my-pi) |
+| DeepSeek Harness (DSH) | `~/.dsh` or `DSH_HOME`                                                                                                                |
+| Strix                  | a vault item and Docker; see [Strix](#strix)                                                                                          |
 
-Claude Code and Codex run on the [provider account](/docs/providers/) chosen for
-each conversation. Sign machines in from any app or with
+Claude Code, Codex and Oh My Pi run on the [provider account](/docs/providers/)
+chosen for each conversation. Sign machines in from any app or with
 `dieter provider login`; a login a machine already has is adopted
 automatically. For the other harnesses, authenticate or configure the provider
 on the execution machine first. Dieter never transfers provider credentials
@@ -33,14 +33,11 @@ dieter harness list --format jsonl
 dieter --machine MACHINE_ID harness list --format jsonl
 ```
 
-The catalog is loaded from the selected execution owner. OMP is intentionally
-curated to the exact Codex-authenticated GPT-6 Luna, Sol, and Astra
-selectors. Discovery uses the pinned OMP build used for new
-turns, so a separate global `omp` upgrade cannot add stale or unrelated choices.
-Dieter passes the chosen selector when it launches OMP because OMP's ACP model
-option intentionally contains only the user's smaller cycling list. Other
-harness catalogs remain machine-local. Codex models follow the installed CLI's
-live catalog; when discovery is unavailable, a bundled fallback list applies.
+The catalog is loaded from the selected execution owner and is
+machine-specific. Oh My Pi offers a fixed list of Claude and ChatGPT models
+that run on your provider accounts; see [Oh My Pi](#oh-my-pi). Codex models
+follow the installed CLI's live catalog; when discovery is unavailable, a
+bundled fallback list applies.
 DSH models are discovered from its standard ACP session options. A successful
 prior catalog is retained through transient refresh failures.
 
@@ -56,10 +53,9 @@ model list; this page does not freeze a second copy of it.
 A new conversation uses the selected model's `defaultEffort` when defined.
 `--effort default` explicitly selects the provider's native default.
 
-Codex, Claude Code, and Pi support model and effort changes between turns, and
-Codex and Claude Code also account changes. OMP and DSH support model changes;
-OMP thinking stays fixed after the first message. Provider options appear only
-where the catalog advertises them.
+Codex, Claude Code, Pi and Oh My Pi support model and effort changes between
+turns, and Codex, Claude Code and Oh My Pi also account changes. DSH supports
+model changes. Provider options appear only where the catalog advertises them.
 Supported Codex models expose mutable **Fast mode** with
 `--provider-option fast_mode=true`; it uses the provider's faster service tier
 at a higher usage rate.
@@ -89,7 +85,7 @@ home and shares it across content-addressed harness releases. Published daemons
 take the runtime and Bun from a prebuilt archive of their own release, verified
 against the SHA-256 built into the binary; daemons built from source install them
 with npm. Updating a separately installed global agent CLI does not change the
-version Dieter runs or its advertised OMP catalog.
+version Dieter runs.
 Managed daemon updates prepare the new content-addressed runtime first; a turn
 already in flight remains pinned to its digest across recovery, and the next turn
 uses the current runtime.
@@ -99,6 +95,78 @@ so DSH hosts need npm; a global `dsh` installation is not required. Its bootstra
 revalidates npm package metadata, so a cached package list cannot hide a newly
 published pinned dependency. Use `dieter harness list` for the current provider
 configuration and `dieter doctor` for host diagnostics.
+
+## Oh My Pi
+
+Oh My Pi (OMP) runs on your [provider accounts](/docs/providers/), like Claude
+Code and Codex, and Dieter manages its setup: Dieter chooses the models and
+accounts, and OMP keeps its sessions in `DIETER_HOME/omp/agent` on the
+execution machine.
+
+**Models.** Claude Opus 5.5, Claude Sonnet 5.5 (the default), Claude Haiku 5.5
+and Claude Fable 5.2 run on Claude accounts. GPT-6 Sol, GPT-6 Astra and GPT-6
+Luna run on ChatGPT accounts. Thinking goes from Low to Max. Model, thinking and
+account can change between messages, also from a Claude model to a GPT model
+and back.
+
+**Account.** The **Account** picker follows the chosen model: it lists the
+Claude accounts for a Claude model and the ChatGPT accounts for a GPT model,
+and choosing a model of the other provider switches to that provider's default
+account. It offers only accounts OMP may use:
+
+- **Claude:** accounts with **Allow Oh My Pi to use this login** turned on.
+  Read [Oh My Pi access](/docs/providers/#oh-my-pi-access) first: Anthropic
+  does not permit this, and the account is at risk.
+- **ChatGPT:** accounts that use **Codex sign-in**, or the machine's own Codex
+  login. **Continue with ChatGPT** accounts and API keys don't work with OMP.
+
+Without such an account the picker says what to do, for example **Allow Oh My
+Pi to use a Claude login in Settings › Providers.**
+
+**Advisor.** OMP's advisor is a second model that reviews the agent's work
+when it finishes and gives it notes, which the agent waits for and can act on.
+The agent settings in every app offer:
+
+| Setting              | Values                                                  | CLI option        |
+| -------------------- | ------------------------------------------------------- | ----------------- |
+| **Advisor**          | Off (default), or one of the seven models above         | `advisor_model`   |
+| **Advisor thinking** | Low, Medium (default), High, Extra high, Max            | `advisor_effort`  |
+| **Advisor account**  | an account of the advisor's provider (an ID in the CLI) | `advisor_account` |
+
+An advisor from the same provider as the model runs on the conversation's
+account. **Advisor account** matters only for an advisor from the other
+provider; without a choice, that provider's default account is used. All three
+can change between messages. The advisor uses its own model's plan usage, so it
+adds to that account's windows.
+
+**What Dieter no longer uses.** Dieter's OMP turns ignore Oh My Pi's own setup
+on the machine: `~/.omp`, `OMP_PROFILE`, logins made with `omp login`, and the
+models, providers and settings in OMP's `config.yml` and `models.yml`. Only the
+models above are offered. An `omp` you run yourself keeps using `~/.omp`. An OMP
+conversation started before this change continues in a new OMP session: its
+history stays visible in Dieter, but the agent doesn't receive the earlier
+context and asks for details it needs.
+
+```sh
+dieter provider omp-access Work on                     # a person allows OMP on a Claude account
+dieter card create --project PROJECT --board BOARD --workspace worktree \
+  --provider omp --model anthropic/claude-opus-5-5 --effort high --account Work \
+  --provider-option advisor_model=openai-codex/gpt-6-sol \
+  --provider-option advisor_effort=low --provider-option advisor_account=pa_123 \
+  --title "Refactor the parser" --prompt "Split the tokenizer out" --lane running
+dieter card send CARD --model openai-codex/gpt-6-astra --account Personal \
+  --message "Continue on GPT-6 Astra"
+dieter card send CARD --provider-option advisor_model=off --message "Finish without the advisor"
+```
+
+`--provider-option` on `card send` replaces the conversation's options, so
+repeat every advisor option you want to keep. `advisor_account` takes an
+account ID (`pa_…`) from `dieter provider list`; `--account` takes an ID or a
+label and must belong to the model's provider.
+
+Inside a turn, OMP fetches each account's current access token from the daemon
+with `dieter provider token --turn --provider claude|chatgpt`. That command is
+for OMP itself; it works only inside the turn and only on its own machine.
 
 ## Strix
 

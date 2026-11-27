@@ -328,6 +328,8 @@ type recordingAccounts struct {
 	usage     []string
 	expired   []string
 	tokens    [][3]int64
+	// ompAdvisor is the advisor account ResolveOMPTurn reports.
+	ompAdvisor string
 }
 
 func (r *recordingAccounts) ResolveTurn(_ context.Context, harness, accountID string) (accounts.TurnAuth, error) {
@@ -335,6 +337,20 @@ func (r *recordingAccounts) ResolveTurn(_ context.Context, harness, accountID st
 	defer r.mu.Unlock()
 	r.resolved = append(r.resolved, harness+":"+accountID)
 	return r.auth, r.err
+}
+
+func (r *recordingAccounts) ResolveOMPTurn(_ context.Context, model, accountID, advisorModel, advisorAccountID string) (accounts.OMPTurn, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.resolved = append(r.resolved, "omp:"+model+":"+accountID+":"+advisorModel+":"+advisorAccountID)
+	if r.err != nil {
+		return accounts.OMPTurn{}, r.err
+	}
+	turn := accounts.OMPTurn{AccountID: r.auth.AccountID}
+	if advisorModel != "" && advisorModel != "off" {
+		turn.AdvisorAccountID = r.ompAdvisor
+	}
+	return turn, nil
 }
 
 func (r *recordingAccounts) QuickTitleAuth(context.Context) (accounts.TurnAuth, bool) {

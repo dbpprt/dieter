@@ -6,9 +6,11 @@ import com.getdieter.api.v1.Harness
 import com.getdieter.api.v1.HarnessModel
 import com.getdieter.api.v1.HarnessSelection
 import com.getdieter.api.v1.ProviderOption
+import com.getdieter.api.v1.ProviderOptionChoice
 import com.getdieter.core.composition.Creation
 import com.getdieter.core.providers.AccountChoice
 import com.getdieter.core.providers.AgentAccounts
+import com.getdieter.core.providers.OmpAccounts
 import com.getdieter.core.providers.ProviderKinds
 
 /**
@@ -102,10 +104,44 @@ data class AgentControls(
     val optionValues: Map<String, String>
         get() = options.associate { it.id to optionValue(it) }
 
+    /**
+     * The provider whose accounts the selected agent runs on; Oh My Pi follows its model's
+     * provider. Null for agents without accounts.
+     */
+    val providerKind: String?
+        get() =
+            ProviderKinds.forSelection(
+                selection.provider,
+                selection.model.ifEmpty { harness?.default_model.orEmpty() },
+            )
+
+    private val omp: Boolean
+        get() = selection.provider == OmpAccounts.HARNESS
+
+    /** [provider]'s accounts the selected agent may run on: Oh My Pi only uses some. */
+    private fun usableAccounts(provider: String?): List<AccountChoice> {
+        provider ?: return emptyList()
+        val listed = accounts.byProvider[provider].orEmpty()
+        return if (omp) listed.filter { OmpAccounts.usable(provider, it) } else listed
+    }
+
     /** The selected agent's provider accounts; none for agents without accounts. */
     val accountOptions: List<AccountChoice>
-        get() =
-            ProviderKinds.forHarness(selection.provider)?.let { accounts.byProvider[it] }.orEmpty()
+        get() = usableAccounts(providerKind)
+
+    /**
+     * Why Oh My Pi has no account to offer for its model's provider, e.g. "Allow Oh My Pi to use a
+     * Claude login in Settings › Providers."; null when it has one, and for other agents.
+     */
+    val accountHint: String?
+        get() {
+            val provider = providerKind?.takeIf { omp } ?: return null
+            if (accountOptions.isNotEmpty()) return null
+            return OmpAccounts.missing(
+                provider,
+                accounts.byProvider[provider].orEmpty().isNotEmpty(),
+            )
+        }
 
     /** A chosen account that is no longer listed; sending with it would fail. */
     val missingAccount: String?
@@ -137,27 +173,143 @@ data class AgentControls(
     val accountLabel: String
         get() = account?.label ?: "Default account"
 
-    /** The account a send uses cannot run on the machine; the composer blocks sending. */
+    /**
+     * The account a send uses cannot run on the machine, or Oh My Pi has none it may use (judged
+     * once any provider account is known); the composer blocks sending.
+     */
     val accountBlocked: Boolean
-        get() = missingAccount != null || account?.ready == false
+        get() =
+            missingAccount != null ||
+                account?.ready == false ||
+                (accountHint != null && accounts.byProvider.isNotEmpty())
 
-    fun choosingAccount(id: String): HarnessSelection = selection.copy(account_id = id)
+    /** Oh My Pi's advisor provider while the advisor is on; null otherwise. */
+    private val advisorKind: String?
+        get() =
+            if (!omp) null
+            else OmpAccounts.advisorProvider(optionValues[OmpAccounts.ADVISOR_MODEL].orEmpty())
 
-    fun choosingProvider(next: Harness): HarnessSelection = Selections.selectingProvider(next)
+    /**
+     * Oh My Pi's advisor runs on an account of its own: it is on and uses the other provider. With
+     * the model's provider it shares the conversation's account, and its account option is hidden.
+     */
+    val advisorAccountApplies: Boolean
+        get() =
+            advisorKind.let { it != null && it != providerKind } &&
+                options.any { it.id == OmpAccounts.ADVISOR_ACCOUNT }
 
-    /** Another model: its default effort, unless the effort may not change now. */
-    fun choosingModel(id: String): HarnessSelection =
-        Selections.selectingModel(
-            selection,
-            harness,
-            id,
-            keepEffort = !Selections.canChange(harness, Selections.EFFORT_SELECTION, locked),
+    /** The accounts the advisor may run on while [advisorAccountApplies]. */
+    val advisorAccountOptions: List<AccountChoice>
+        get() = if (advisorAccountApplies) usableAccounts(advisorKind) else emptyList()
+
+    /** The advisor account chosen, while it is one of [advisorAccountOptions]; else "". */
+    private val chosenAdvisorAccount: String
+        get() =
+            selection.provider_options[OmpAccounts.ADVISOR_ACCOUNT]
+                ?.takeIf { id -> id.isNotEmpty() && advisorAccountOptions.any { it.id == id } }
+                .orEmpty()
+
+    /**
+     * The account the advisor runs on: the chosen one, else its provider's default, else the only
+     * one signed in on the machine.
+     */
+    val advisorAccount: AccountChoice?
+        get() {
+            val options = advisorAccountOptions
+            return options.firstOrNull { it.id == chosenAdvisorAccount }
+                ?: options.firstOrNull { it.isDefault }
+                ?: options.filter { it.ready }.singleOrNull()
+        }
+
+    /**
+     * [options] as pickers show them: Oh My Pi's advisor account becomes a choice of the advisor
+     * provider's accounts while [advisorAccountApplies], and is left out otherwise.
+     */
+    val shownOptions: List<ProviderOption>
+        get() = options.mapNotNull { option ->
+            when {
+                !omp || option.id != OmpAccounts.ADVISOR_ACCOUNT -> option
+                !advisorAccountApplies -> null
+                else -> advisorAccountOption(option)
+            }
+        }
+
+    private fun advisorAccountOption(option: ProviderOption): ProviderOption {
+        val choices = advisorAccountOptions.map { account ->
+            ProviderOptionChoice(
+                value_ = account.id,
+                name =
+                    if (account.ready) account.label
+                    else "${account.label} · ${account.readiness.reason}",
+            )
+        }
+        return option.copy(
+            type = "enum",
+            default_value = "",
+            choices =
+                if (advisorAccount == null)
+                    listOf(ProviderOptionChoice(value_ = "", name = "Default account")) + choices
+                else choices,
         )
+    }
+
+    /** What a shown option's picker selects: the advisor's account, else [optionValue]. */
+    fun shownValue(option: ProviderOption): String =
+        if (omp && option.id == OmpAccounts.ADVISOR_ACCOUNT) advisorAccount?.id.orEmpty()
+        else optionValue(option)
+
+    /**
+     * [selection] as a send or creation names it. Oh My Pi names an account the daemons would not
+     * fall back to (its provider's default may be one it cannot use), and names its advisor's
+     * account only while the advisor runs on one of its own; other agents send it as chosen.
+     */
+    val settledSelection: HarnessSelection
+        get() {
+            if (!omp) return selection
+            val accountId =
+                selection.account_id.ifEmpty { account?.takeIf { !it.isDefault }?.id.orEmpty() }
+            val advisor =
+                advisorAccount
+                    ?.takeIf { it.id == chosenAdvisorAccount || !it.isDefault }
+                    ?.id
+                    .orEmpty()
+            val options = selection.provider_options
+            return selection.copy(
+                account_id = accountId,
+                provider_options =
+                    if (advisor.isEmpty() && OmpAccounts.ADVISOR_ACCOUNT !in options) options
+                    else options + (OmpAccounts.ADVISOR_ACCOUNT to advisor),
+            )
+        }
+
+    private fun settled(next: HarnessSelection): HarnessSelection =
+        copy(selection = next).settledSelection
+
+    fun choosingAccount(id: String): HarnessSelection = settled(selection.copy(account_id = id))
+
+    fun choosingProvider(next: Harness): HarnessSelection =
+        settled(Selections.selectingProvider(next))
+
+    /**
+     * Another model: its default effort, unless the effort may not change now. Oh My Pi moving to
+     * the other provider's models moves to that provider's account.
+     */
+    fun choosingModel(id: String): HarnessSelection {
+        val next =
+            Selections.selectingModel(
+                selection,
+                harness,
+                id,
+                keepEffort = !Selections.canChange(harness, Selections.EFFORT_SELECTION, locked),
+            )
+        val moved = omp && ProviderKinds.forSelection(next.provider, next.model) != providerKind
+        return settled(if (moved) next.copy(account_id = "") else next)
+    }
 
     fun choosingEffort(id: String): HarnessSelection = selection.copy(effort = id)
 
     fun settingOption(id: String, value: String): HarnessSelection =
-        selection.copy(provider_options = selection.provider_options + (id to value))
+        settled(selection.copy(provider_options = selection.provider_options + (id to value)))
 
     companion object {
         /**

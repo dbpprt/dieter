@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/dbpprt/dieter/internal/engine/accounts"
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/platform/fault"
@@ -40,12 +41,18 @@ func resolveTurnSelection(catalog *harness.Catalog, card model.Card, requested m
 	}
 	// The conversation keeps its account until a turn picks another; a draft
 	// that switches harness drops the account of the other provider.
-	if accountID == "" && provider == card.Provider {
+	inheritedAccount := accountID == "" && provider == card.Provider
+	if inheritedAccount {
 		accountID = card.ProviderAccountID
 	}
 	adapter, configuredModel, err := catalog.ResolveSelectionWithRefresh(context.Background(), provider, modelName)
 	if err != nil {
 		return adapter, configuredModel, model.HarnessSelection{}, err
+	}
+	// An Oh My Pi conversation that moves to the other provider's models
+	// likewise drops the previous provider's account.
+	if inheritedAccount && adapter.Runtime == ompAdapter && accounts.OMPModelProvider(configuredModel.ID) != accounts.OMPModelProvider(card.Model) {
+		accountID = ""
 	}
 	modelChanged := configuredModel.ID != card.Model
 	if started && modelChanged && !supportsTurnSelection(adapter, "model") {

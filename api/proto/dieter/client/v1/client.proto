@@ -747,7 +747,8 @@ message AgentControlsState {
   // has none.
   string fast_option_id = 19;
   // The selected agent's provider accounts, for the account picker; empty
-  // for agents without accounts (Pi, Oh My Pi, DSH).
+  // for agents without accounts (Pi, DSH). Oh My Pi lists the accounts of
+  // its model's provider that it may use.
   repeated AgentAccountOption accounts = 20;
   bool account_enabled = 21;
   // The chosen account's label, else "Default account".
@@ -755,6 +756,10 @@ message AgentControlsState {
   // The account a send uses on the target machine is not ready there: the
   // composer blocks sending and offers ConversationState.provider_notice.
   bool account_blocked = 23;
+  // Shown in place of the account picker when the agent has no account it
+  // may use, e.g. "Allow Oh My Pi to use a Claude login in Settings ›
+  // Providers."; empty otherwise.
+  string account_hint = 24;
 }
 
 // One entry of an account picker.
@@ -3625,6 +3630,8 @@ message ProvidersCommand {
     ProviderAccountRef consume_reset = 13;
     // Drops a finished session from the slice.
     ProviderSessionRef dismiss = 14;
+    // Claude accounts only (ProviderAccountRow.offers_omp_access).
+    ProviderOmpAccess set_omp_access = 15;
   }
 }
 
@@ -3646,6 +3653,13 @@ message ProviderAccountRef { string account_id = 1; }
 message ProviderInclusion {
   string account_id = 1;
   bool included = 2;
+}
+
+// Whether Oh My Pi turns may use a Claude login. Clients confirm before
+// allowing it, in the core's words (SharedRules.providerOmpAccessMessage).
+message ProviderOmpAccess {
+  string account_id = 1;
+  bool allowed = 2;
 }
 
 message ProviderSignInStart {
@@ -3768,6 +3782,10 @@ message ProviderAccountRow {
   // Host and environment accounts follow the machine's own login or key;
   // removing one only hides it until it is adopted again.
   bool managed = 20;
+  // Oh My Pi turns may use this Claude login.
+  bool omp_access = 21;
+  // A Claude account: the row offers the Oh My Pi access switch.
+  bool offers_omp_access = 22;
 }
 
 message ProviderWindowRow {

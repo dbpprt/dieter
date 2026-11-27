@@ -1293,22 +1293,22 @@ func TestConversationKeepsProviderAndResumesWithChangedModelAndEffort(t *testing
 	}
 }
 
-func TestProviderOptionsPersistReachRuntimeAndLockAfterFirstTurn(t *testing.T) {
+func TestOMPAdvisorOptionsPersistReachRuntimeAndChangeBetweenTurns(t *testing.T) {
 	t.Parallel()
 	service, fake, project, board := appSetup(t)
-	options := map[string]string{"advisor": "true"}
+	options := map[string]string{"advisor_model": "openai-codex/gpt-6-sol", "advisor_effort": "high"}
 	card, err := service.CreateCard(context.Background(), CardInput{Project: project.ID, Board: board.ID, Lane: model.LaneTodo, Title: "Review", Prompt: "Review it", Provider: "omp", ProviderOptions: options})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if card.ProviderOptions["advisor"] != "true" {
+	if card.ProviderOptions["advisor_model"] != "openai-codex/gpt-6-sol" {
 		t.Fatalf("stored options=%#v", card.ProviderOptions)
 	}
 	if _, err = service.SubmitCardParts(card.ID, []model.UIMessagePart{{Type: "text", Text: "Review it"}}, "omp", card.Model, "", options); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, func() bool { return fake.Count() == 1 })
-	if request := fake.Request(0); request.Options["advisor"] != "true" {
+	if request := fake.Request(0); request.Options["advisor_model"] != "openai-codex/gpt-6-sol" || request.Options["advisor_effort"] != "high" {
 		t.Fatalf("runtime options=%#v", request.Options)
 	}
 	waitFor(t, func() bool {
@@ -1320,9 +1320,18 @@ func TestProviderOptionsPersistReachRuntimeAndLockAfterFirstTurn(t *testing.T) {
 		defer service.mu.Unlock()
 		return len(service.active) == 0
 	})
-	if _, err = service.SubmitCardParts(card.ID, []model.UIMessagePart{{Type: "text", Text: "Change"}}, "omp", card.Model, "", map[string]string{"advisor": "false"}); err == nil || !strings.Contains(err.Error(), "options are locked") {
-		t.Fatalf("provider option switch err=%v", err)
+	if _, err = service.SubmitCardParts(card.ID, []model.UIMessagePart{{Type: "text", Text: "Change"}}, "omp", card.Model, "", map[string]string{"advisor_model": "off"}); err != nil {
+		t.Fatalf("advisor change between turns err=%v", err)
 	}
+	waitFor(t, func() bool { return fake.Count() == 2 })
+	if request := fake.Request(1); request.Options["advisor_model"] != "off" {
+		t.Fatalf("second turn options=%#v", request.Options)
+	}
+	waitFor(t, func() bool {
+		service.mu.Lock()
+		defer service.mu.Unlock()
+		return len(service.active) == 0
+	})
 }
 
 func TestCodexFastModePersistsForTasksAndChatsAndCanChangeBetweenTurns(t *testing.T) {
@@ -1416,7 +1425,7 @@ func TestProviderOptionDefaultsDoNotLockLegacyConversation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = service.SubmitCardParts(card.ID, []model.UIMessagePart{{Type: "text", Text: "Review it"}}, "omp", card.Model, "", map[string]string{"advisor": "false"}); err != nil {
+	if _, err = service.SubmitCardParts(card.ID, []model.UIMessagePart{{Type: "text", Text: "Review it"}}, "omp", card.Model, "", map[string]string{"advisor_model": "off"}); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, func() bool {
@@ -1435,7 +1444,7 @@ func TestProviderOptionDefaultsDoNotLockLegacyConversation(t *testing.T) {
 	if _, err = service.Store.Kanban.UpdateCardCache(card.ID, kanban.CardCacheInput{ProviderOptions: map[string]string{}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = service.SubmitCardParts(card.ID, []model.UIMessagePart{{Type: "text", Text: "Continue"}}, "omp", card.Model, "", map[string]string{"advisor": "false"}); err != nil {
+	if _, err = service.SubmitCardParts(card.ID, []model.UIMessagePart{{Type: "text", Text: "Continue"}}, "omp", card.Model, "", map[string]string{"advisor_model": "off"}); err != nil {
 		t.Fatalf("default option rejected for legacy conversation: %v", err)
 	}
 	waitFor(t, func() bool { return fake.Count() == 2 })
@@ -1886,7 +1895,7 @@ func TestGracefulRestartContinuesActiveTurnForEveryProvider(t *testing.T) {
 		{provider: "codex", model: "gpt-5.6-sol", effort: "low"},
 		{provider: "claude-code", model: "sonnet", effort: "low"},
 		{provider: "pi", model: "default", effort: "minimal"},
-		{provider: "omp", model: "openai-codex/gpt-6-sol", effort: "low", options: map[string]string{"advisor": "true"}},
+		{provider: "omp", model: "openai-codex/gpt-6-sol", effort: "low", options: map[string]string{"advisor_model": "anthropic/claude-opus-5-5"}},
 		{provider: "dsh", model: "default"},
 	}
 	for _, provider := range providers {
@@ -1995,7 +2004,7 @@ func TestGracefulRestartContinuesActiveTurnForEveryProvider(t *testing.T) {
 			if len(requests) != 2 || requests[0].Continue || !requests[1].Continue || requests[1].Prompt != "" || requests[1].ResponseMessageID != responseMessageID || !hasTurnContinuation(requests[1].Session) {
 				t.Fatalf("requests=%#v", requests)
 			}
-			if provider.options != nil && (requests[0].Options["advisor"] != "true" || requests[1].Options["advisor"] != "true") {
+			if provider.options != nil && (requests[0].Options["advisor_model"] != "anthropic/claude-opus-5-5" || requests[1].Options["advisor_model"] != "anthropic/claude-opus-5-5") {
 				t.Fatalf("provider options were not retained across restart: %#v", requests)
 			}
 			stored, err := service.Store.Kanban.ResolveCard(card.ID)

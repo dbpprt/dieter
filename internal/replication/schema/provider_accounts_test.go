@@ -22,6 +22,15 @@ func providerKV(t *testing.T, ns, key string, value any) crdt.Record {
 	return crdt.Record{Kind: KVKindPrefix + ns, ID: key, Versions: []crdt.Version{{Clock: crdt.Clock{"a": 1}, Value: raw}}}
 }
 
+func mustJSON(t *testing.T, value any) []byte {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
 func TestProviderAccountRecordsAreValidated(t *testing.T) {
 	t.Parallel()
 	account := ProviderAccountRecord{
@@ -37,6 +46,23 @@ func TestProviderAccountRecordsAreValidated(t *testing.T) {
 	if err := ValidateKV(providerKV(t, ProviderAccountsNamespace, testAccountID, siwc)); err != nil {
 		t.Fatalf("valid SIWC account rejected: %v", err)
 	}
+	omp := account
+	omp.OMPAccess = true
+	if err := ValidateKV(providerKV(t, ProviderAccountsNamespace, testAccountID, omp)); err != nil {
+		t.Fatalf("Claude account with Oh My Pi access rejected: %v", err)
+	}
+	if decoded, err := DecodeProviderAccount(testAccountID, mustJSON(t, omp)); err != nil || !decoded.OMPAccess {
+		t.Fatalf("decoded Oh My Pi access = %+v, %v", decoded, err)
+	}
+	chatGPT := account
+	chatGPT.Provider, chatGPT.Method = ProviderChatGPT, MethodCodex
+	if err := ValidateKV(providerKV(t, ProviderAccountsNamespace, testAccountID, chatGPT)); err != nil {
+		t.Fatalf("valid ChatGPT account rejected: %v", err)
+	}
+	chatGPT.OMPAccess = true
+	if _, err := DecodeProviderAccount(testAccountID, mustJSON(t, chatGPT)); err == nil {
+		t.Fatal("a ChatGPT account with Oh My Pi access decoded")
+	}
 	for name, mutate := range map[string]func(*ProviderAccountRecord){
 		"provider":      func(a *ProviderAccountRecord) { a.Provider = "gemini" },
 		"method":        func(a *ProviderAccountRecord) { a.Method = MethodCodex },
@@ -48,6 +74,9 @@ func TestProviderAccountRecordsAreValidated(t *testing.T) {
 		"identity":      func(a *ProviderAccountRecord) { a.Identity = &ProviderIdentity{Email: strings.Repeat("a", 300)} },
 		"created":       func(a *ProviderAccountRecord) { a.CreatedAt = "yesterday" },
 		"creator":       func(a *ProviderAccountRecord) { a.CreatedBy = "d.mini" },
+		"omp chatgpt": func(a *ProviderAccountRecord) {
+			a.Provider, a.Method, a.OMPAccess = ProviderChatGPT, MethodCodex, true
+		},
 	} {
 		changed := account
 		mutate(&changed)

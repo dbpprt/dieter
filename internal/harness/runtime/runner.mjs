@@ -386,7 +386,7 @@ const [
   { z },
   { createLocalCodex },
   { claudeInactiveBuiltinTools, createLocalClaudeCode },
-  { codexConfig, dshACPArgs, dshPackageVersion, ompACPArgs, ompRuntimeConfig },
+  { codexConfig, dshACPArgs, dshPackageVersion, ompACPArgs, ompConversationConfig, ompTurnFile },
   { createLocalOMP, ompSource },
   { harnessDiagnosticErrorMessage },
   { createContentPresentationTool, contentPresentationInstructions },
@@ -401,13 +401,7 @@ const [
     retryClaudeAuthFailure,
     retryEmptyClaudeResume,
   },
-  {
-    createOMPLaunchCandidates,
-    createOMPSessionWithCompatibility,
-    prepareOMPConfig,
-    prepareOMPHookPaths,
-    prioritizeOMPLaunchCandidates,
-  },
+  { isACPImplementationMismatch, prepareOMPLaunch },
 ] = await Promise.all([
   import("@ai-sdk/harness/agent"),
   import("@ai-sdk/harness-pi"),
@@ -423,13 +417,10 @@ const [
   import("./background-processes.mjs"),
   import("./usage-metadata.mjs"),
   import("./claude-resilience.mjs"),
-  import("./omp-resilience.mjs"),
+  import("./omp-launch.mjs"),
 ]);
 
 let harness;
-let ompSettingsForCandidate;
-let ompHookPaths;
-let ompConfigPath;
 switch (adapter) {
   case "codex":
     harness = createLocalCodex({
@@ -460,31 +451,36 @@ switch (adapter) {
       capabilityCollector.consumeOMPEnvelope(event),
     );
     process.env.DIETER_OMP_CAPABILITY_FILE = capabilityFile;
-    ompSettingsForCandidate = ({ hookPath, configPath }) => ({
+    const ompLaunch = await prepareOMPLaunch({
+      runtimeRoot: request.runtimeRoot,
+      sessionId: request.sessionId,
+      hookSource: fileURLToPath(new URL("./omp-capabilities-hook.mjs", import.meta.url)),
+      config: ompConversationConfig(request),
+      turn: ompTurnFile(request),
+    });
+    process.env.DIETER_OMP_TURN_FILE = ompLaunch.turnPath;
+    harness = createLocalOMP({
       harnessId: "omp",
       source: ompSource(),
       executable: "omp",
-      args: ompACPArgs(request, hookPath, configPath),
+      args: ompACPArgs(ompLaunch),
+      // The turn's model reaches OMP through ACP's model option on every
+      // turn, so a model change keeps the launch, and the session, intact.
+      modelMapping: { type: "session-config-option", path: "model" },
+      // OMP's token helper (`dieter provider token --turn`, rendered into the
+      // managed models.yml) reaches the daemon with the turn's identity.
       forwardEnv: [
         "HOME",
         "PI_CODING_AGENT_DIR",
-        "OMP_PROFILE",
         "PI_NATIVE_VARIANT",
         "DIETER_OMP_CAPABILITY_FILE",
+        "DIETER_OMP_TURN_FILE",
+        "DIETER_HOME",
+        "DIETER_CARD_ID",
+        "DIETER_TURN_TOKEN",
         ...extraHarnessEnv,
       ],
     });
-    ompHookPaths = await prepareOMPHookPaths({
-      runtimeRoot: request.runtimeRoot,
-      currentHookPath: fileURLToPath(new URL("./omp-capabilities-hook.mjs", import.meta.url)),
-    });
-    ompConfigPath = await prepareOMPConfig({
-      runtimeRoot: request.runtimeRoot,
-      content: ompRuntimeConfig(),
-    });
-    harness = createLocalOMP(
-      ompSettingsForCandidate({ hookPath: ompHookPaths[0], configPath: ompConfigPath }),
-    );
     break;
   }
   case "dsh-acp": {
@@ -653,8 +649,7 @@ try {
         ? { inactiveTools: claudeInactiveBuiltinTools(candidateHarness) }
         : {}),
     });
-  // OMP receives its model as a launch argument (ompACPArgs).
-  let agent = createAgent(harness, adapter === "omp-acp" ? undefined : request.model || undefined);
+  let agent = createAgent(harness, request.model || undefined);
   const sessionOptions = {
     sessionId: request.sessionId,
     sandboxSession,
@@ -673,28 +668,23 @@ try {
     const { continueFrom: _discardedTurn, ...resumeFrom } = request.session;
     sessionOptions.resumeFrom = resumeFrom;
   }
+  let ompFreshSession = false;
   if (adapter === "omp-acp" && (sessionOptions.resumeFrom || sessionOptions.continueFrom)) {
-    const lifecycleState =
-      sessionOptions.continueFrom ??
-      sessionOptions.resumeFrom?.continueFrom ??
-      sessionOptions.resumeFrom;
-    const candidates = prioritizeOMPLaunchCandidates({
-      candidates: createOMPLaunchCandidates({ hookPaths: ompHookPaths, configPath: ompConfigPath }),
-      lifecycleState,
-      settingsForCandidate: ompSettingsForCandidate,
-      acpPackageVersion,
-    });
-    const resumed = await createOMPSessionWithCompatibility({
-      candidates,
-      createAgent: (candidate) =>
-        createAgent(createLocalOMP(ompSettingsForCandidate(candidate)), undefined),
-      sessionOptions,
-    });
-    if (resumed.candidate.hookPath !== ompHookPaths[0] || resumed.candidate.configPath == null) {
-      console.error(`resumed OMP lifecycle with compatible launch ${resumed.candidate.hookPath}`);
+    try {
+      session = await agent.createSession(sessionOptions);
+    } catch (error) {
+      // An OMP session from before Dieter managed OMP (another agent
+      // directory and launch) cannot attach. Continue in a new session.
+      if (!isACPImplementationMismatch(error) || request.continue) throw error;
+      console.error("OMP session from an earlier launch cannot resume; starting a new one");
+      const {
+        resumeFrom: _oldSession,
+        continueFrom: _oldContinuation,
+        ...freshOptions
+      } = sessionOptions;
+      session = await agent.createSession(freshOptions);
+      ompFreshSession = true;
     }
-    agent = resumed.agent;
-    session = resumed.session;
   } else {
     session = await agent.createSession(sessionOptions);
   }
@@ -806,7 +796,11 @@ try {
     );
   } else {
     const mayNeedFreshCodexThread = adapter === "codex" && Boolean(sessionOptions.resumeFrom);
-    primarySummary = await streamPrompt(runtimePrompt, {
+    const prompt = ompFreshSession
+      ? "Dieter moved this conversation to a new Oh My Pi session. You do not have the earlier conversation context. If the latest request depends on missing context, ask the user for the specific information needed instead of guessing.\n\nLatest user message:\n" +
+        runtimePrompt
+      : runtimePrompt;
+    primarySummary = await streamPrompt(prompt, {
       deferInitialError: mayNeedFreshCodexThread,
     });
     if (

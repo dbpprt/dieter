@@ -50,6 +50,10 @@ Accounts synchronize; credentials do not.
   directory links the user's shared Claude configuration (`projects/`,
   `settings.json`, skills, agents, commands, plugins) from `~/.claude`, so a
   conversation can change account between turns and keep its session.
+  _Superseded in part by [ADR 0007](0007-oh-my-pi-managed-accounts.md):_ for
+  an Oh My Pi turn on a Claude account with Oh My Pi access, the daemon reads
+  the login's access token (never the refresh token) from Claude Code's store
+  and serves it to that turn; Claude Code stays the only refresher.
 - **One login per account and machine.** Every machine signs in to an account
   on its own and holds the only copy of that login, so each login has exactly
   one refresher. The apps' "Sign in on all machines" sheet walks through the

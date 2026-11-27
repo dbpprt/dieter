@@ -80,7 +80,9 @@ type Account struct {
 	ID, Provider, Label, Method string
 	Identity                    Identity
 	IncludeInSummary, IsDefault bool
-	Logins                      []MachineLogin
+	// OMPAccess lets Oh My Pi turns use this Claude login.
+	OMPAccess bool
+	Logins    []MachineLogin
 	// Usage is the freshest usage any machine observed.
 	Usage *Usage
 	// DieterTokens sums Dieter's own turns over machines.

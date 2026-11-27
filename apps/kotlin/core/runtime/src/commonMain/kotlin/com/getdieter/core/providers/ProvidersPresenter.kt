@@ -96,6 +96,8 @@ object ProvidersPresenter {
                 signs && view.reachable.any { !account.signedIn(it.id) } && busy.isEmpty(),
             status = if (usage?.windows.isNullOrEmpty()) ProviderUsages.status(usage) else "",
             managed = !signs,
+            omp_access = account.record.ompAccess,
+            offers_omp_access = account.provider == ProviderKinds.CLAUDE,
         )
     }
 

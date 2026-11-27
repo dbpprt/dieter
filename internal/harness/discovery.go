@@ -194,7 +194,7 @@ func (c *Catalog) discoverAdapter(ctx context.Context, providerID string) discov
 	timeout := 30 * time.Second
 	// The first ACP-backed discovery prepares the same pinned implementation a
 	// turn will use. Subsequent refreshes reuse its content-addressed install.
-	if providerID == "omp" || providerID == "dsh" {
+	if providerID == "dsh" {
 		timeout = 10 * time.Minute
 	}
 	commandCtx, cancel := context.WithTimeout(ctx, timeout)
@@ -227,10 +227,11 @@ func (c *Catalog) discoveredSnapshot() []Adapter {
 }
 
 // discoverable reports whether an adapter has a model discovery integration.
-// The mock harness and Strix (which takes LiteLLM model ids as configured)
-// use their catalog models as they are.
+// The mock harness, Strix (which takes LiteLLM model ids as configured) and
+// Oh My Pi (whose models are the managed Claude and ChatGPT models its
+// accounts run, ADR 0007) use their catalog models as they are.
 func discoverable(adapter Adapter) bool {
-	return adapter.ID != "mock" && adapter.Runtime != "mock" && adapter.Runtime != "strix"
+	return adapter.ID != "mock" && adapter.Runtime != "mock" && adapter.Runtime != "strix" && adapter.Runtime != "omp-acp"
 }
 
 func catalogByID(values []Adapter) map[string]Adapter {
@@ -253,8 +254,6 @@ func (c *Catalog) discoverModels(ctx context.Context, provider string) ([]Model,
 		return parseClaudeHelp(output)
 	case "pi":
 		return c.discoverPiModels(ctx)
-	case "omp":
-		return c.discoverOMPModels(ctx)
 	case "dsh":
 		return c.discoverDSHModels(ctx)
 	default:
@@ -510,103 +509,6 @@ func parseClaudeHelp(data []byte) ([]Model, error) {
 		models = append(models, Model{ID: id, Name: titleWords(id), Efforts: append([]string(nil), efforts...)})
 	}
 	return models, nil
-}
-
-type ompModelEnvelope struct {
-	DefaultModel string `json:"defaultModel"`
-	Models       []struct {
-		Selector      string   `json:"selector"`
-		ID            string   `json:"id"`
-		Name          string   `json:"name"`
-		Provider      string   `json:"provider"`
-		ContextWindow int      `json:"contextWindow"`
-		Thinking      []string `json:"thinking"`
-	} `json:"models"`
-}
-
-func parseOMPModels(data []byte) ([]Model, error) {
-	var envelope ompModelEnvelope
-	if err := json.Unmarshal(data, &envelope); err != nil {
-		return nil, err
-	}
-	models := make([]Model, 0, len(envelope.Models))
-	for _, item := range envelope.Models {
-		id := item.Selector
-		if id == "" && item.Provider != "" && item.ID != "" {
-			id = item.Provider + "/" + item.ID
-		}
-		if id == "" {
-			continue
-		}
-		name := item.Name
-		if name == "" {
-			name = id
-		}
-		models = append(models, Model{ID: id, Name: name, ContextWindow: item.ContextWindow, Efforts: append([]string(nil), item.Thinking...)})
-	}
-	configured := strings.TrimSpace(envelope.DefaultModel)
-	for index := range models {
-		level := ""
-		if configured == models[index].ID {
-			level = ""
-		} else {
-			for _, supported := range models[index].Efforts {
-				if configured == models[index].ID+":"+supported {
-					level = supported
-					break
-				}
-			}
-			if level == "" {
-				continue
-			}
-		}
-		models[index].DefaultEffort = level
-		if index > 0 {
-			models[0], models[index] = models[index], models[0]
-		}
-		break
-	}
-	return models, nil
-}
-
-func (c *Catalog) discoverOMPModels(ctx context.Context) ([]Model, error) {
-	output, err := c.runOMPDiscovery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return parseOMPModels(output)
-}
-
-func (c *Catalog) runOMPDiscoveryCommand(ctx context.Context) ([]byte, error) {
-	dieterHome, err := c.discoveryHome()
-	if err != nil {
-		return nil, err
-	}
-	runtimeDir, err := NewSubprocessRunner(dieterHome, c.env).ensure(ctx)
-	if err != nil {
-		return nil, err
-	}
-	bunBin, err := ensureManagedBun(ctx, dieterHome, c.env.runtimeArchive())
-	if err != nil {
-		return nil, fmt.Errorf("prepare managed Bun for pinned OMP discovery: %w", err)
-	}
-	discoveryRoot := filepath.Join(dieterHome, "runtime", "harness", "omp-discovery")
-	command := exec.CommandContext(ctx, discoveryExecutable("node"), filepath.Join(runtimeDir, "omp-discovery.mjs"), discoveryRoot)
-	prepareHarnessCommand(command)
-	command.WaitDelay = 9 * time.Second
-	command.Dir = runtimeDir
-	command.Env = c.env.ompHarnessEnvironment(bunBin)
-	var stderr bytes.Buffer
-	command.Stderr = &stderr
-	output, err := command.Output()
-	if err != nil {
-		message := strings.TrimSpace(stderr.String())
-		if message == "" {
-			message = err.Error()
-		}
-		return nil, fmt.Errorf("discover pinned OMP models: %s", message)
-	}
-	return output, nil
 }
 
 type piRPCResponse struct {

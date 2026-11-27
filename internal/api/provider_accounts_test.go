@@ -12,6 +12,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/dbpprt/dieter/internal/engine"
 	"github.com/dbpprt/dieter/internal/engine/accounts"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/harness"
@@ -26,7 +27,8 @@ import (
 const providerTestDaemon = "dm_provider_api"
 
 // newProviderAccountsClient serves the API over an enrolled store whose
-// accounts engine signs in through the in-process fixture backend.
+// accounts engine signs in through the in-process fixture backend. The API
+// and its turns share that engine, as in `dieter serve`.
 func newProviderAccountsClient(t *testing.T, runner harness.Runner) (dieterclient.ConnectClient, *store.Store) {
 	t.Helper()
 	data := testkit.PeerStore(t, providerTestDaemon)
@@ -44,7 +46,8 @@ func newProviderAccountsClient(t *testing.T, runner harness.Runner) (dieterclien
 	if runner == nil {
 		runner = &testkit.FakeRunner{}
 	}
-	application := NewWithOptions(data, logger, Options{Runner: runner, Catalog: testkit.MockCatalog(), Accounts: service})
+	app := engine.NewWithOptions(data, engine.Options{Runner: runner, Catalog: testkit.MockCatalog(), Accounts: service})
+	application := NewWithOptions(data, logger, Options{App: app, Runner: runner, Catalog: testkit.MockCatalog(), Accounts: service})
 	server := testkit.HTTPServer(application.Handler())
 	t.Cleanup(server.Close)
 	return dieterclient.NewConnect(localHTTPClient(server.Client(), data.Root), server.URL), data
@@ -153,6 +156,27 @@ func TestProviderAccountRPCsManageAccountsAndDefaults(t *testing.T) {
 	}
 	_, err = client.UpdateProviderAccount(ctx, &dieterv1.UpdateProviderAccountRequest{AccountId: "pa_missingmissingmissing22222"})
 	wantCode(t, err, connect.CodeNotFound, "update of an unknown account")
+
+	// Oh My Pi access is a Claude account's opt-in, off by default; other
+	// edits keep it.
+	if work.GetOmpAccess() || personal.GetOmpAccess() {
+		t.Fatalf("new accounts have Oh My Pi access: %v %v", work, personal)
+	}
+	allowed, denied := true, false
+	if updated, err := client.UpdateProviderAccount(ctx, &dieterv1.UpdateProviderAccountRequest{AccountId: work.GetId(), OmpAccess: &allowed}); err != nil || !updated.GetOmpAccess() || updated.GetLabel() != "Day job" {
+		t.Fatalf("Oh My Pi access on = %v, %v", updated, err)
+	}
+	if updated, err := client.UpdateProviderAccount(ctx, &dieterv1.UpdateProviderAccountRequest{AccountId: work.GetId(), IncludeInSummary: &allowed}); err != nil || !updated.GetOmpAccess() {
+		t.Fatalf("another edit dropped Oh My Pi access: %v, %v", updated, err)
+	}
+	if listed, err := client.ListProviderAccounts(ctx, &dieterv1.ListProviderAccountsRequest{Provider: dieterv1.ProviderKind_PROVIDER_KIND_CLAUDE}); err != nil || !providerAccountByID(listed, work.GetId()).GetOmpAccess() {
+		t.Fatalf("listed Oh My Pi access = %v, %v", listed, err)
+	}
+	if updated, err := client.UpdateProviderAccount(ctx, &dieterv1.UpdateProviderAccountRequest{AccountId: work.GetId(), OmpAccess: &denied}); err != nil || updated.GetOmpAccess() {
+		t.Fatalf("Oh My Pi access off = %v, %v", updated, err)
+	}
+	_, err = client.UpdateProviderAccount(ctx, &dieterv1.UpdateProviderAccountRequest{AccountId: personal.GetId(), OmpAccess: &allowed})
+	wantCode(t, err, connect.CodeInvalidArgument, "Oh My Pi access on a ChatGPT account")
 
 	if value, err := client.SetDefaultProviderAccount(ctx, &dieterv1.SetDefaultProviderAccountRequest{AccountId: sideID}); err != nil || !value.GetIsDefault() {
 		t.Fatalf("set default = %v, %v", value, err)
@@ -490,6 +514,144 @@ func TestProviderTurnTokenServesOnlyALiveTurnOnTheLocalRoute(t *testing.T) {
 	wantCode(t, err, connect.CodePermissionDenied, "a turn token over a remote route")
 	runner.release <- "done"
 	waitForIdle(t, data, codex.ID)
+}
+
+func providerAccountByID(listed *dieterv1.ListProviderAccountsResponse, id string) *dieterv1.ProviderAccount {
+	for _, account := range listed.GetAccounts() {
+		if account.GetId() == id {
+			return account
+		}
+	}
+	return nil
+}
+
+// signInProviderAccount signs an account in on the test daemon: Claude with
+// the fixture's pasted code, ChatGPT with a device code.
+func signInProviderAccount(t *testing.T, client dieterclient.ConnectClient, account *dieterv1.ProviderAccount) {
+	t.Helper()
+	login, err := client.StartProviderLogin(t.Context(), &dieterv1.StartProviderLoginRequest{AccountId: account.GetId()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if login.GetChallenge().GetExpects() == dieterv1.ProviderLoginInput_PROVIDER_LOGIN_INPUT_CODE {
+		if _, err := client.SubmitProviderLoginInput(t.Context(), &dieterv1.SubmitProviderLoginInputRequest{LoginId: login.GetLoginId(), Input: &dieterv1.SubmitProviderLoginInputRequest_Code{Code: accounts.FixtureCode}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if phase := lastPhase(watchProviderLogin(t, client, login.GetLoginId())); phase != dieterv1.ProviderLoginPhase_PROVIDER_LOGIN_PHASE_SUCCEEDED {
+		t.Fatalf("sign-in of %s ended %v", account.GetLabel(), phase)
+	}
+}
+
+// An Oh My Pi turn asks for each provider's token: its implementation
+// model's account and its advisor's, on the local route, while it runs.
+// Other turns cannot ask per provider.
+func TestProviderTurnTokenServesAnOMPTurnEachProvidersAccount(t *testing.T) {
+	t.Parallel()
+	runner := vaultTurnRunner{started: make(chan harness.Request, 1), release: make(chan string, 1)}
+	client, data := newProviderAccountsClient(t, runner)
+	ctx := t.Context()
+	project, err := data.Kanban.CreateProject(kanban.CreateProjectInput{Name: "Oh My Pi", Path: testkit.CheckoutDir(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	board, err := data.Kanban.CreateBoard(kanban.CreateBoardInput{Project: project.ID, Name: "Main", Workflow: model.WorkflowReview})
+	if err != nil {
+		t.Fatal(err)
+	}
+	work := createProviderAccount(t, client, dieterv1.ProviderKind_PROVIDER_KIND_CLAUDE, "Work", dieterv1.ProviderLoginMethod_PROVIDER_LOGIN_METHOD_UNSPECIFIED)
+	chat := createProviderAccount(t, client, dieterv1.ProviderKind_PROVIDER_KIND_CHATGPT, "Chat", dieterv1.ProviderLoginMethod_PROVIDER_LOGIN_METHOD_UNSPECIFIED)
+	signInProviderAccount(t, client, work)
+	signInProviderAccount(t, client, chat)
+	allowed := true
+	if _, err := client.UpdateProviderAccount(ctx, &dieterv1.UpdateProviderAccountRequest{AccountId: work.GetId(), OmpAccess: &allowed}); err != nil {
+		t.Fatal(err)
+	}
+	startTurn := func(cardID string) harness.Request {
+		t.Helper()
+		if _, err := client.SendMessage(ctx, &dieterv1.SendMessageRequest{CardId: cardID, Parts: []*dieterv1.MessagePart{{Type: "text", Text: "Go"}}}); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case request := <-runner.started:
+			return request
+		case <-time.After(testkit.Budget(30 * time.Second)):
+			t.Fatal("the turn did not start")
+		}
+		return harness.Request{}
+	}
+
+	// Claude implementation model, ChatGPT advisor on the provider default.
+	omp, err := data.Kanban.CreateCard(kanban.CreateCardInput{
+		Project: project.ID, Board: board.ID, Lane: model.LaneTodo, Title: "Oh My Pi", Prompt: "Work", Provider: "omp", Model: "anthropic/claude-sonnet-5-5",
+		ProviderAccountID: work.GetId(), ProviderOptions: map[string]string{"advisor_model": "openai-codex/gpt-6-sol", "advisor_effort": "low"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := startTurn(omp.ID)
+	if request.Adapter != "omp-acp" || request.ProviderAccountID != work.GetId() || request.Options["advisor_account"] != chat.GetId() || len(request.Auth) != 0 {
+		t.Fatalf("Oh My Pi turn: adapter=%q account=%q options=%v auth=%v", request.Adapter, request.ProviderAccountID, request.Options, request.Auth)
+	}
+	if stored, err := data.Kanban.ResolveCard(omp.ID); err != nil || stored.ProviderAccountID != work.GetId() || stored.ProviderOptions["advisor_account"] != chat.GetId() {
+		t.Fatalf("stored Oh My Pi card = %+v, %v", stored, err)
+	}
+	agent := withHeaders(ctx, map[string]string{turnTokenMetadata: request.Environment["DIETER_TURN_TOKEN"]})
+	claude, err := client.GetProviderTurnToken(agent, &dieterv1.GetProviderTurnTokenRequest{Provider: dieterv1.ProviderKind_PROVIDER_KIND_CLAUDE})
+	if err != nil || !strings.HasPrefix(claude.GetToken(), "sk-ant-oat01-fixture-") || claude.GetExpiresAt() == "" {
+		t.Fatalf("Claude token = %v, %v", claude, err)
+	}
+	chatGPT, err := client.GetProviderTurnToken(agent, &dieterv1.GetProviderTurnTokenRequest{Provider: dieterv1.ProviderKind_PROVIDER_KIND_CHATGPT})
+	if err != nil || strings.Count(chatGPT.GetToken(), ".") != 2 || chatGPT.GetToken() == claude.GetToken() {
+		t.Fatalf("ChatGPT token = %v, %v", chatGPT, err)
+	}
+	_, err = client.GetProviderTurnToken(agent, &dieterv1.GetProviderTurnTokenRequest{})
+	wantCode(t, err, connect.CodeFailedPrecondition, "an Oh My Pi turn without a provider")
+	remote := withHeaders(ctx, map[string]string{operatorSubjectMetadata: "github:1", deviceIDMetadata: "dv_remote", turnTokenMetadata: request.Environment["DIETER_TURN_TOKEN"]})
+	_, err = client.GetProviderTurnToken(remote, &dieterv1.GetProviderTurnTokenRequest{Provider: dieterv1.ProviderKind_PROVIDER_KIND_CLAUDE})
+	wantCode(t, err, connect.CodePermissionDenied, "an Oh My Pi token over a remote route")
+	// Revoking the opt-in applies to the running turn's next request.
+	denied := false
+	if _, err := client.UpdateProviderAccount(ctx, &dieterv1.UpdateProviderAccountRequest{AccountId: work.GetId(), OmpAccess: &denied}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.GetProviderTurnToken(agent, &dieterv1.GetProviderTurnTokenRequest{Provider: dieterv1.ProviderKind_PROVIDER_KIND_CLAUDE})
+	wantCode(t, err, connect.CodeFailedPrecondition, "a Claude token after the opt-in was revoked")
+	runner.release <- "done"
+	waitForIdle(t, data, omp.ID)
+	_, err = client.GetProviderTurnToken(agent, &dieterv1.GetProviderTurnTokenRequest{Provider: dieterv1.ProviderKind_PROVIDER_KIND_CHATGPT})
+	wantCode(t, err, connect.CodePermissionDenied, "the token of a finished turn")
+
+	// A ChatGPT-only turn without an advisor has no Claude account to serve.
+	solo, err := data.Kanban.CreateCard(kanban.CreateCardInput{
+		Project: project.ID, Board: board.ID, Lane: model.LaneTodo, Title: "Codex only", Prompt: "Work", Provider: "omp", Model: "openai-codex/gpt-6-sol",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request = startTurn(solo.ID)
+	agent = withHeaders(ctx, map[string]string{turnTokenMetadata: request.Environment["DIETER_TURN_TOKEN"]})
+	if served, err := client.GetProviderTurnToken(agent, &dieterv1.GetProviderTurnTokenRequest{Provider: dieterv1.ProviderKind_PROVIDER_KIND_CHATGPT}); err != nil || served.GetToken() != chatGPT.GetToken() {
+		t.Fatalf("ChatGPT-only token = %v, %v", served, err)
+	}
+	_, err = client.GetProviderTurnToken(agent, &dieterv1.GetProviderTurnTokenRequest{Provider: dieterv1.ProviderKind_PROVIDER_KIND_CLAUDE})
+	wantCode(t, err, connect.CodeFailedPrecondition, "a provider the turn does not use")
+	runner.release <- "done"
+	waitForIdle(t, data, solo.ID)
+
+	// Claude Code turns never ask per provider.
+	claudeCode, err := data.Kanban.CreateCard(kanban.CreateCardInput{
+		Project: project.ID, Board: board.ID, Lane: model.LaneTodo, Title: "Claude Code", Prompt: "Work", Provider: "claude-code", Model: "sonnet", ProviderAccountID: work.GetId(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request = startTurn(claudeCode.ID)
+	agent = withHeaders(ctx, map[string]string{turnTokenMetadata: request.Environment["DIETER_TURN_TOKEN"]})
+	_, err = client.GetProviderTurnToken(agent, &dieterv1.GetProviderTurnTokenRequest{Provider: dieterv1.ProviderKind_PROVIDER_KIND_CLAUDE})
+	wantCode(t, err, connect.CodeFailedPrecondition, "a Claude Code turn asking for a provider's token")
+	runner.release <- "done"
+	waitForIdle(t, data, claudeCode.ID)
 }
 
 func TestProviderAccountRPCsNeedTheAccountsEngine(t *testing.T) {

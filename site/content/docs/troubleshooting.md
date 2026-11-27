@@ -109,7 +109,7 @@ machine could detach it.
 ## A model is unavailable
 
 Run `dieter harness list --format jsonl` on the execution host, or use global
-`--machine MACHINE_ID`. For Claude Code and Codex, check that a
+`--machine MACHINE_ID`. For Claude Code, Codex and Oh My Pi, check that a
 [provider account](/docs/providers/) is signed in on that host
 (`dieter --machine MACHINE_ID provider list`); for other harnesses, verify the
 provider's normal configuration and login there. The catalog is

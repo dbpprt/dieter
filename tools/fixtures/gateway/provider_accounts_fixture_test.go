@@ -85,7 +85,7 @@ func TestFixtureSeedsProviderAccountsIdempotently(t *testing.T) {
 	// test renamed keeps its name.
 	time.Sleep(1100 * time.Millisecond)
 	renamed := "Day job"
-	if _, err := a.Update(ctx, fixtureWorkAccount, &renamed, nil); err != nil {
+	if _, err := a.Update(ctx, fixtureWorkAccount, &renamed, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := seedPrimaryProviderAccounts(ctx, a, primary); err != nil {

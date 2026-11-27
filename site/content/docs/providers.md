@@ -7,15 +7,16 @@ weight: 12
 slug: "providers"
 ---
 
-Claude Code and Codex turns run on your own Claude and ChatGPT subscriptions.
-A **provider account** is one Claude or ChatGPT login that agents may use:
-Claude Code runs on Claude accounts, Codex on ChatGPT accounts. You add an
-account once for your whole Dieter account, and every app and machine shows
-the same list. Each machine then signs in to the account on its own, and you
-choose the account per chat.
+Claude Code, Codex and Oh My Pi turns run on your own Claude and ChatGPT
+subscriptions. A **provider account** is one Claude or ChatGPT login that
+agents may use: Claude Code runs on Claude accounts, Codex on ChatGPT accounts,
+and Oh My Pi on either, depending on its model (on a Claude account only with
+[your permission](#oh-my-pi-access)). You add an account once for your whole
+Dieter account, and every app and machine shows the same list. Each machine
+then signs in to the account on its own, and you choose the account per chat.
 
-Pi, Oh My Pi, DSH and Strix keep using their own configuration on the
-execution machine; see [Agents & models](/docs/harnesses/).
+Pi, DSH and Strix keep using their own configuration on the execution
+machine; see [Agents & models](/docs/harnesses/).
 
 ## Accounts and machines
 
@@ -34,7 +35,8 @@ uses must be signed in on that machine.
   store, copy or pass on Claude sign-ins; you must sign in through Claude Code
   itself, on Anthropic's page. Dieter starts Claude Code's own sign-in on the
   machine and shows you its page and code field. The login stays with Claude
-  Code on that machine, and Dieter never reads it.
+  Code on that machine, and Dieter never reads it, unless you
+  [allow Oh My Pi to use it](#oh-my-pi-access).
 - **Renewing logins.** Claude and ChatGPT replace a login's refresh token each
   time it renews. If two machines shared one copy, the first to renew would
   silently sign the other one out.
@@ -137,6 +139,12 @@ If you don't choose, Dieter uses, in this order:
 Each provider has one default; set it on the Providers page. The apps also
 remember the account you last chose per provider for new work.
 
+**Oh My Pi** takes the account of its model's provider: a Claude account for a
+Claude model, a ChatGPT account for a GPT model. The menu lists only accounts
+Oh My Pi may use, and choosing a model of the other provider switches to that
+provider's account. An advisor on the other provider has its own **Advisor
+account**; see [Oh My Pi](/docs/harnesses/#oh-my-pi).
+
 **Switching.** You can choose another account of the same provider before any
 message. The next turn runs on it and continues the same conversation, with
 its history. A running turn keeps its account. The provider itself stays fixed
@@ -227,6 +235,42 @@ apps. Choose **Continue with ChatGPT** when you add a ChatGPT account.
 - If OpenAI does not grant plan usage to the sign-in, the account shows that
   plan usage isn't available.
 
+## Oh My Pi access
+
+Oh My Pi runs Claude models only on Claude accounts you allow it to use. Turn on
+**Allow Oh My Pi to use this login** on the account: on the Mac in **Settings ›
+Providers**, on iPhone, iPad and Android under **Manage providers**. It is off
+by default, and the choice applies to the account on all your machines.
+
+{{< callout type="warn" title="Anthropic does not permit this" >}}
+Anthropic's terms do not allow third-party tools such as Oh My Pi to use Claude
+Pro or Max logins. Oh My Pi presents itself to Anthropic as Claude Code to make
+these logins work. Anthropic can block that at any time, and it may limit,
+suspend or close a Claude account used this way, without notice. The risk
+applies to the whole account, including your Claude Code and claude.ai use of
+it. Turn this on only for an account where you accept that risk.
+{{< /callout >}}
+
+The app asks you to confirm before it turns the switch on. Then:
+
+- When an Oh My Pi conversation runs on the account, the machine that runs it
+  reads the login's current access token from Claude Code and hands it to that
+  conversation's Oh My Pi, and to nothing else. An access token lasts up to
+  eight hours.
+- Claude Code keeps renewing the login itself, also during Oh My Pi turns.
+  Dieter never reads the refresh token, stores nothing, and copies nothing to
+  other machines. Oh My Pi gets no login of its own.
+- The agent in such a conversation can read that access token too. Agents
+  run as your user, so they could already reach Claude Code's login on that
+  machine; see the [security model](/docs/security/#provider-accounts).
+- Turning the switch off stops Oh My Pi from getting new tokens for the
+  account. A turn that is already running keeps the token it has until it
+  expires.
+
+ChatGPT accounts need no switch: Oh My Pi uses a **Codex sign-in** or the
+machine's own Codex login the way Codex does. **Continue with ChatGPT**
+accounts and API keys don't work with Oh My Pi.
+
 ## Sign out and remove
 
 **Sign out** on a machine's row ends that machine's login and deletes it there;
@@ -240,17 +284,19 @@ out of its accounts first, while it is still reachable.
 
 ## Troubleshooting
 
-| Problem                                         | What to do                                                                                                                                                               |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Device codes are disabled                       | Enable device code sign-in in your ChatGPT security settings (for a Business workspace, ask its admin), or use the browser sign-in.                                      |
-| Port 1455 is in use                             | Another Codex browser sign-in runs on that machine, perhaps your own `codex login`. Finish or cancel it, or use the device code.                                         |
-| The login doesn't match                         | The browser was signed in to a different Claude or ChatGPT login. Sign out there, or use a private window, and sign in again; or add the other login as its own account. |
-| Sign-in expired                                 | The provider rejected the login and it could not be renewed, for example after you signed out of all devices or changed your password. Sign in again on that machine.    |
-| The sign-in sheet gave up                       | A Claude sign-in waits 30 minutes for its code, and a device code lives 15 minutes before the sheet replaces it. Start again.                                            |
-| The page after signing in doesn't load          | It is an address on the machine. [Paste it into the sheet](#when-the-browser-cant-reach-the-machine).                                                                    |
-| "Add a Claude account in Settings › Providers"  | No account of that provider can run there. Add one, or sign the machine in.                                                                                              |
-| "Work isn't signed in on box"                   | Sign that machine in, or choose another account for the chat.                                                                                                            |
-| A ChatGPT chat says web search isn't authorized | The account uses Sign in with ChatGPT, which has no web search. Switch the chat to a Codex sign-in account.                                                              |
+| Problem                                                 | What to do                                                                                                                                                               |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Device codes are disabled                               | Enable device code sign-in in your ChatGPT security settings (for a Business workspace, ask its admin), or use the browser sign-in.                                      |
+| Port 1455 is in use                                     | Another Codex browser sign-in runs on that machine, perhaps your own `codex login`. Finish or cancel it, or use the device code.                                         |
+| The login doesn't match                                 | The browser was signed in to a different Claude or ChatGPT login. Sign out there, or use a private window, and sign in again; or add the other login as its own account. |
+| Sign-in expired                                         | The provider rejected the login and it could not be renewed, for example after you signed out of all devices or changed your password. Sign in again on that machine.    |
+| The sign-in sheet gave up                               | A Claude sign-in waits 30 minutes for its code, and a device code lives 15 minutes before the sheet replaces it. Start again.                                            |
+| The page after signing in doesn't load                  | It is an address on the machine. [Paste it into the sheet](#when-the-browser-cant-reach-the-machine).                                                                    |
+| "Add a Claude account in Settings › Providers"          | No account of that provider can run there. Add one, or sign the machine in.                                                                                              |
+| "Work isn't signed in on box"                           | Sign that machine in, or choose another account for the chat.                                                                                                            |
+| A ChatGPT chat says web search isn't authorized         | The account uses Sign in with ChatGPT, which has no web search. Switch the chat to a Codex sign-in account.                                                              |
+| "Allow Oh My Pi to use … in Settings › Providers first" | The Oh My Pi chat uses a Claude account without [Oh My Pi access](#oh-my-pi-access). Turn it on, choose another account, or choose a GPT model.                          |
+| "Oh My Pi runs ChatGPT models only on ChatGPT logins"   | The account uses Continue with ChatGPT or an API key. Choose a ChatGPT account with Codex sign-in.                                                                       |
 
 ## From the CLI
 
@@ -266,6 +312,8 @@ dieter provider check Work
 dieter provider logout Work
 dieter provider rename Work "Work Max"
 dieter provider default Work
+dieter provider omp-access Work on                   # let Oh My Pi use this Claude login
+dieter provider omp-access Work off
 dieter provider exclude Personal                     # leave it out of summaries
 dieter provider include Personal
 dieter provider usage --refresh
@@ -274,9 +322,9 @@ dieter provider remove Personal --confirm REMOVE
 ```
 
 `ACCOUNT` is an account ID (`pa_…`) or a unique label. `add`, `rename`,
-`include`, `exclude`, `default` and `remove` change the account on every
-machine. `login`, `logout`, `check`, `usage --refresh` and `reset` act on one
-machine: this one, or the one global `--machine` names.
+`include`, `exclude`, `default`, `omp-access` and `remove` change the account
+on every machine. `login`, `logout`, `check`, `usage --refresh` and `reset` act
+on one machine: this one, or the one global `--machine` names.
 
 `provider login` prints the page to open and, for ChatGPT, the device code,
 then waits. For a Claude code it prompts on the terminal without echo, and it
@@ -295,7 +343,9 @@ dieter chat create --project PROJECT_ID --provider codex --account Personal \
 dieter schedule update --account Work SCHEDULE_ID
 ```
 
-The account must belong to the conversation's provider. Agents may list
-accounts and pass `--account` to the work they create, but they cannot add,
-rename or remove accounts, change defaults, sign in or out, or spend reset
-credits. The [CLI reference](/docs/cli-reference/) lists every option.
+The account must belong to the conversation's provider; for Oh My Pi, to the
+model's provider. `dieter provider list` shows in its `OMP` column whether a
+Claude account has Oh My Pi access. Agents may list accounts and pass
+`--account` to the work they create, but they cannot add, rename or remove
+accounts, change defaults, turn Oh My Pi access on or off, sign in or out, or
+spend reset credits. The [CLI reference](/docs/cli-reference/) lists every option.

@@ -590,6 +590,13 @@ public nonisolated struct Dieter_V1_ProviderAccount: @unchecked Sendable {
     set {_uniqueStorage()._createdBy = newValue}
   }
 
+  /// Claude only: Oh My Pi turns may use this login. Off by default; Anthropic
+  /// does not permit Claude.ai logins in third-party harnesses.
+  public var ompAccess: Bool {
+    get {_storage._ompAccess}
+    set {_uniqueStorage()._ompAccess = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -666,12 +673,23 @@ public nonisolated struct Dieter_V1_UpdateProviderAccountRequest: Sendable {
   /// Clears the value of `includeInSummary`. Subsequent reads from it will return its default value.
   public mutating func clearIncludeInSummary() {self._includeInSummary = nil}
 
+  /// Claude accounts only.
+  public var ompAccess: Bool {
+    get {_ompAccess ?? false}
+    set {_ompAccess = newValue}
+  }
+  /// Returns true if `ompAccess` has been explicitly set.
+  public var hasOmpAccess: Bool {self._ompAccess != nil}
+  /// Clears the value of `ompAccess`. Subsequent reads from it will return its default value.
+  public mutating func clearOmpAccess() {self._ompAccess = nil}
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 
   fileprivate var _label: String? = nil
   fileprivate var _includeInSummary: Bool? = nil
+  fileprivate var _ompAccess: Bool? = nil
 }
 
 public nonisolated struct Dieter_V1_DeleteProviderAccountRequest: Sendable {
@@ -950,6 +968,10 @@ public nonisolated struct Dieter_V1_GetProviderTurnTokenRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
+
+  /// Unspecified: the turn's Sign in with ChatGPT account. Claude or ChatGPT:
+  /// the account an Oh My Pi turn uses for that provider.
+  public var provider: Dieter_V1_ProviderKind = .unspecified
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -1395,7 +1417,7 @@ nonisolated extension Dieter_V1_ProviderMachineLogin: SwiftProtobuf.Message, Swi
 
 nonisolated extension Dieter_V1_ProviderAccount: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ProviderAccount"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}provider\0\u{1}label\0\u{1}method\0\u{1}identity\0\u{3}include_in_summary\0\u{3}is_default\0\u{1}logins\0\u{1}usage\0\u{3}dieter_tokens\0\u{3}created_at\0\u{3}created_by\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}provider\0\u{1}label\0\u{1}method\0\u{1}identity\0\u{3}include_in_summary\0\u{3}is_default\0\u{1}logins\0\u{1}usage\0\u{3}dieter_tokens\0\u{3}created_at\0\u{3}created_by\0\u{3}omp_access\0")
 
   fileprivate class _StorageClass {
     var _id: String = String()
@@ -1410,6 +1432,7 @@ nonisolated extension Dieter_V1_ProviderAccount: SwiftProtobuf.Message, SwiftPro
     var _dieterTokens: Dieter_V1_ProviderTokenUsage? = nil
     var _createdAt: String = String()
     var _createdBy: String = String()
+    var _ompAccess: Bool = false
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -1432,6 +1455,7 @@ nonisolated extension Dieter_V1_ProviderAccount: SwiftProtobuf.Message, SwiftPro
       _dieterTokens = source._dieterTokens
       _createdAt = source._createdAt
       _createdBy = source._createdBy
+      _ompAccess = source._ompAccess
     }
   }
 
@@ -1462,6 +1486,7 @@ nonisolated extension Dieter_V1_ProviderAccount: SwiftProtobuf.Message, SwiftPro
         case 10: try { try decoder.decodeSingularMessageField(value: &_storage._dieterTokens) }()
         case 11: try { try decoder.decodeSingularStringField(value: &_storage._createdAt) }()
         case 12: try { try decoder.decodeSingularStringField(value: &_storage._createdBy) }()
+        case 13: try { try decoder.decodeSingularBoolField(value: &_storage._ompAccess) }()
         default: break
         }
       }
@@ -1510,6 +1535,9 @@ nonisolated extension Dieter_V1_ProviderAccount: SwiftProtobuf.Message, SwiftPro
       if !_storage._createdBy.isEmpty {
         try visitor.visitSingularStringField(value: _storage._createdBy, fieldNumber: 12)
       }
+      if _storage._ompAccess != false {
+        try visitor.visitSingularBoolField(value: _storage._ompAccess, fieldNumber: 13)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -1531,6 +1559,7 @@ nonisolated extension Dieter_V1_ProviderAccount: SwiftProtobuf.Message, SwiftPro
         if _storage._dieterTokens != rhs_storage._dieterTokens {return false}
         if _storage._createdAt != rhs_storage._createdAt {return false}
         if _storage._createdBy != rhs_storage._createdBy {return false}
+        if _storage._ompAccess != rhs_storage._ompAccess {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -1647,7 +1676,7 @@ nonisolated extension Dieter_V1_CreateProviderAccountRequest: SwiftProtobuf.Mess
 
 nonisolated extension Dieter_V1_UpdateProviderAccountRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".UpdateProviderAccountRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}account_id\0\u{1}label\0\u{3}include_in_summary\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}account_id\0\u{1}label\0\u{3}include_in_summary\0\u{3}omp_access\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1658,6 +1687,7 @@ nonisolated extension Dieter_V1_UpdateProviderAccountRequest: SwiftProtobuf.Mess
       case 1: try { try decoder.decodeSingularStringField(value: &self.accountID) }()
       case 2: try { try decoder.decodeSingularStringField(value: &self._label) }()
       case 3: try { try decoder.decodeSingularBoolField(value: &self._includeInSummary) }()
+      case 4: try { try decoder.decodeSingularBoolField(value: &self._ompAccess) }()
       default: break
       }
     }
@@ -1677,6 +1707,9 @@ nonisolated extension Dieter_V1_UpdateProviderAccountRequest: SwiftProtobuf.Mess
     try { if let v = self._includeInSummary {
       try visitor.visitSingularBoolField(value: v, fieldNumber: 3)
     } }()
+    try { if let v = self._ompAccess {
+      try visitor.visitSingularBoolField(value: v, fieldNumber: 4)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1684,6 +1717,7 @@ nonisolated extension Dieter_V1_UpdateProviderAccountRequest: SwiftProtobuf.Mess
     if lhs.accountID != rhs.accountID {return false}
     if lhs._label != rhs._label {return false}
     if lhs._includeInSummary != rhs._includeInSummary {return false}
+    if lhs._ompAccess != rhs._ompAccess {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -2270,18 +2304,29 @@ nonisolated extension Dieter_V1_ConsumeProviderUsageResetResponse: SwiftProtobuf
 
 nonisolated extension Dieter_V1_GetProviderTurnTokenRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".GetProviderTurnTokenRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}provider\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    // Load everything into unknown fields
-    while try decoder.nextFieldNumber() != nil {}
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularEnumField(value: &self.provider) }()
+      default: break
+      }
+    }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.provider != .unspecified {
+      try visitor.visitSingularEnumField(value: self.provider, fieldNumber: 1)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Dieter_V1_GetProviderTurnTokenRequest, rhs: Dieter_V1_GetProviderTurnTokenRequest) -> Bool {
+    if lhs.provider != rhs.provider {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

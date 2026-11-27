@@ -78,7 +78,8 @@ message CreationPreferences {
   string project_id = 7;
   // Project ID → the checkout last chosen in it.
   map<string, string> checkouts = 9;
-  // Provider (claude, chatgpt) → the account last chosen for it.
+  // Provider (claude, chatgpt) → the account last chosen for it; Oh My Pi
+  // keeps its own ("omp/claude", "omp/chatgpt").
   map<string, string> accounts = 10;
 }
 

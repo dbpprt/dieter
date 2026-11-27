@@ -21,15 +21,16 @@ Use the daemon API or CLI for operations instead of editing central storage.
 
 ## Agent configuration
 
-| Setting                                      | Purpose                                                                                           |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `DIETER_HOME`                                | Central daemon data root                                                                          |
-| `$DIETER_HOME/harnesses.yaml`                | Optional per-daemon model/capability registry override                                            |
-| `DIETER_HARNESS_CONFIG` / `--harness-config` | Explicit registry path                                                                            |
-| `CODEX_HOME`, `CLAUDE_CONFIG_DIR`            | This machine's own Codex and Claude Code logins, adopted as [provider accounts](/docs/providers/) |
-| `PI_AGENT_DIR`, `OMP_PROFILE`, `DSH_HOME`    | Provider-specific configuration selection                                                         |
-| `$DIETER_HOME/provider-accounts/`            | Logins of the provider accounts you add in Dieter; never replicated                               |
-| `$DIETER_HOME/codex`                         | `CODEX_HOME` of every Dieter Codex process; its `config.toml` follows `~/.codex/config.toml`      |
+| Setting                                      | Purpose                                                                                                                   |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `DIETER_HOME`                                | Central daemon data root                                                                                                  |
+| `$DIETER_HOME/harnesses.yaml`                | Optional per-daemon model/capability registry override                                                                    |
+| `DIETER_HARNESS_CONFIG` / `--harness-config` | Explicit registry path                                                                                                    |
+| `CODEX_HOME`, `CLAUDE_CONFIG_DIR`            | This machine's own Codex and Claude Code logins, adopted as [provider accounts](/docs/providers/)                         |
+| `PI_AGENT_DIR`, `DSH_HOME`                   | Pi and DSH configuration selection                                                                                        |
+| `$DIETER_HOME/provider-accounts/`            | Logins of the provider accounts you add in Dieter; never replicated                                                       |
+| `$DIETER_HOME/codex`                         | `CODEX_HOME` of every Dieter Codex process; its `config.toml` follows `~/.codex/config.toml`                              |
+| `$DIETER_HOME/omp/agent`                     | Oh My Pi's directory for every Dieter OMP turn: sessions and settings, no logins; `~/.omp` and `OMP_PROFILE` are not used |
 
 See [Agents & models](/docs/harnesses/) for credentials and runtime behavior,
 and the [environment reference](/docs/environment/) for every daemon variable.

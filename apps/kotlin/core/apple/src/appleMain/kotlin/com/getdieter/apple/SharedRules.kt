@@ -214,6 +214,18 @@ object SharedRules {
 
     fun providerResetMessage(): String = ProviderExports.resetMessage()
 
+    /** The Oh My Pi access switch of a Claude account row (`offers_omp_access`). */
+    fun providerOmpAccessLabel(): String = ProviderExports.ompAccessLabel()
+
+    fun providerOmpAccessDetail(): String = ProviderExports.ompAccessDetail()
+
+    /** The confirmation before Oh My Pi may use a Claude login; turning it off needs none. */
+    fun providerOmpAccessTitle(): String = ProviderExports.ompAccessTitle()
+
+    fun providerOmpAccessMessage(): String = ProviderExports.ompAccessMessage()
+
+    fun providerOmpAccessConfirm(): String = ProviderExports.ompAccessConfirm()
+
     // --- Code reviewer ------------------------------------------------------------
 
     /**

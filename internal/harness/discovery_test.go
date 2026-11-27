@@ -290,43 +290,6 @@ func TestDiscoverDSHModelsRejectsInvalidCatalog(t *testing.T) {
 	}
 }
 
-func TestParseOMPModelsUsesIntegrationSelectorsAndThinking(t *testing.T) {
-	models, err := parseOMPModels([]byte(`{"models":[{"provider":"local","id":"deepseek","selector":"local/deepseek","name":"DeepSeek","contextWindow":1048576,"thinking":["high","max"]}]}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(models) != 1 || models[0].ID != "local/deepseek" || models[0].ContextWindow != 1048576 {
-		t.Fatalf("unexpected models: %#v", models)
-	}
-	if got := models[0].Efforts; len(got) != 2 || got[0] != "high" || got[1] != "max" {
-		t.Fatalf("unexpected thinking levels: %#v", got)
-	}
-}
-
-func TestDiscoverOMPModelsUsesPinnedCatalog(t *testing.T) {
-	catalog := StaticCatalog(false)
-	catalog.runOMPDiscovery = func(context.Context) ([]byte, error) {
-		return []byte(`{"models":[{"selector":"openrouter/openai/gpt-6-sol","name":"GPT-6 Sol","thinking":["max"]}]}`), nil
-	}
-	models, err := catalog.discoverModels(context.Background(), "omp")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(models) != 1 || models[0].ID != "openrouter/openai/gpt-6-sol" {
-		t.Fatalf("unexpected pinned OMP models: %#v", models)
-	}
-}
-
-func TestParseOMPModelsSelectsTheExactConfiguredModelAndEffort(t *testing.T) {
-	models, err := parseOMPModels([]byte(`{"defaultModel":"openrouter/model:free:high","models":[{"selector":"openrouter/model","name":"Base","thinking":["high"]},{"selector":"openrouter/model:free","name":"Free","thinking":["low","high"]}]}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(models) != 2 || models[0].ID != "openrouter/model:free" || models[0].DefaultEffort != "high" {
-		t.Fatalf("unexpected configured OMP model: %#v", models)
-	}
-}
-
 func TestParseClaudeHelpUsesAdvertisedAliasesAndEfforts(t *testing.T) {
 	models, err := parseClaudeHelp([]byte(`
   --effort <level> Effort level for the current session

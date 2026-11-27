@@ -43,8 +43,9 @@ dieter harness list
 Use an existing Git working tree on this machine. `setup` enrolls the machine;
 `project open` registers the repository. They are separate operations.
 
-Claude Code and Codex run on a [provider account](/docs/providers/). If the
-host is already signed in to Claude Code or Codex, Dieter adopts that login.
+Claude Code, Codex and Oh My Pi run on a
+[provider account](/docs/providers/). If the host is already signed in to
+Claude Code or Codex, Dieter adopts that login.
 Otherwise add an account and sign the host in, from the app once it is
 connected (step 3) or here:
 

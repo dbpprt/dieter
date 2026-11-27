@@ -37,6 +37,7 @@ struct ProvidersRenderTests {
             $0.usageObservedAt = resetsAt(hours: -0.05)
             $0.dieterTokens = "1.2M tokens in 5 h · 8.4M in 7 days"
             $0.canSignInAll = true
+            $0.offersOmpAccess = true
             $0.machines = [
                 .with {
                     $0.daemonID = "d_mini"; $0.name = "mini"; $0.online = true; $0.state = "signed_in"

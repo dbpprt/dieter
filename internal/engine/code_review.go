@@ -325,7 +325,13 @@ type reviewUsage struct{ input, output int64 }
 // runReviewer runs the reviewer harness turn in the snapshot: a bare request
 // like quick titles, with no host tools, no steering and its own session.
 func (s *Service) runReviewer(ctx context.Context, job *codeReviewJob, directory, instructions, prompt string) (string, reviewUsage, error) {
-	auth, err := s.resolveTurnAuth(job.adapter.Runtime, job.settings.AccountID)
+	// Oh My Pi gets its provider tokens through the running turn's token
+	// (ADR 0007); a bare review turn has none.
+	if job.adapter.Runtime == ompAdapter {
+		return "", reviewUsage{}, fault.New(fault.FailedPrecondition, "Oh My Pi cannot review yet; choose Claude Code or Codex as the reviewer")
+	}
+	selection := model.HarnessSelection{Provider: job.adapter.ID, Model: job.model.ID, AccountID: job.settings.AccountID}
+	auth, err := s.resolveTurnAuth(job.adapter.Runtime, &selection)
 	if err != nil {
 		return "", reviewUsage{}, err
 	}

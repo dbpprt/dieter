@@ -11,6 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.getdieter.client.v1.*
 import com.getdieter.mobile.design.*
@@ -92,6 +93,17 @@ internal fun AgentSettings(agent: AgentControlsState?, onChoice: (AgentChoice) -
                     ) {
                         onChoice(AgentChoice(account = it))
                     }
+                }
+            else if (agent.account_hint.isNotEmpty())
+                add { position ->
+                    ListRow(
+                        "Account",
+                        Modifier.testTag("agent-account-hint"),
+                        position = position,
+                        subtitle = agent.account_hint,
+                        glyph = Glyph.KEY,
+                        subtitleMaxLines = 3,
+                    )
                 }
         }
     Group(rows) { row, position -> row(position) }

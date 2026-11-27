@@ -1,0 +1,6 @@
+main=anthropic/claude-sonnet-5-5 advisor=openai-codex/gpt-6-sol:low exit=0
+acp: status=ok stop=end_turn reply="OK" kinds=["available_commands_update","session_info_update","agent_message_chunk","usage_update"]
+usage updates: 1
+helper:
+  {"at":"2026-11-27T01:27:03.392Z","provider":"claude","action":"served","sha256":"30c3090fb8e4","minutesLeft":231}
+  {"at":"2026-11-27T01:27:03.787Z","provider":"codex","action":"served","sha256":"bad470ab91de","minutesLeft":14399}

@@ -369,7 +369,7 @@ func (s *Service) resumeOrphanedTurn(ref string) error {
 	}
 	// Credentials may have rotated while Dieter was down: resolve the
 	// account again for the continuation.
-	turnAuth, err := s.resolveTurnAuth(adapter.Runtime, selection.AccountID)
+	turnAuth, err := s.resolveTurnAuth(adapter.Runtime, &selection)
 	if err != nil {
 		cancel()
 		_ = s.Store.Leases.Release(lease)
@@ -377,12 +377,15 @@ func (s *Service) resumeOrphanedTurn(ref string) error {
 		close(done)
 		return err
 	}
+	if adapter.Runtime == ompAdapter {
+		providerOptions = withOMPAdvisorAccount(providerOptions, selection.ProviderOptions[ompAdvisorAccountOption])
+	}
 	request := harness.Request{
 		Harness: adapter.ID, Adapter: adapter.Runtime, Model: configuredModel.RuntimeID(), ConfiguredModel: configuredModel.ID,
 		ContextWindow: configuredModel.ContextWindow, Effort: effort, Options: providerOptions, ResponseMessageID: responseMessageID,
 		Instructions: resolution.Instructions, SessionID: detail.Card.ID, Session: conversation.Session,
 		ProjectPath: workspaceValue.Path, RuntimeRoot: filepath.Join(s.Store.RuntimeDir(), "sessions", detail.Project.ID), Continue: true,
-		ContentPresentationEnabled: true, RuntimeDigest: runtimeReference.Digest,
+		ContentPresentationEnabled: true, RuntimeDigest: runtimeReference.Digest, DieterExecutable: s.CLIExecutable,
 		Environment: s.agentEnvironment(detail.Card.ID, turnID),
 	}
 	applyTurnAuth(turnAuth, &request)

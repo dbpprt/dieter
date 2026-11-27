@@ -94,12 +94,12 @@ func TestUpdateDeleteAndSetDefault(t *testing.T) {
 	work := h.create(t, ProviderClaude, "Work", "")
 	personal := h.create(t, ProviderClaude, "Personal", "")
 	label, include := "Day job", false
-	updated, err := h.svc.Update(ctx, work.ID, &label, &include)
+	updated, err := h.svc.Update(ctx, work.ID, &label, &include, nil)
 	if err != nil || updated.Label != "Day job" || updated.IncludeInSummary {
 		t.Fatalf("update = %+v, %v", updated, err)
 	}
 	bad := "x\ny"
-	if _, err := h.svc.Update(ctx, work.ID, &bad, nil); kindOf(err) != fault.Invalid {
+	if _, err := h.svc.Update(ctx, work.ID, &bad, nil, nil); kindOf(err) != fault.Invalid {
 		t.Fatalf("bad label = %v", err)
 	}
 	if acct, err := h.svc.SetDefault(ctx, personal.ID); err != nil || !acct.IsDefault {
@@ -119,7 +119,7 @@ func TestUpdateDeleteAndSetDefault(t *testing.T) {
 	if err := h.svc.Delete(ctx, personal.ID); kindOf(err) != fault.NotFound {
 		t.Fatalf("second delete = %v", err)
 	}
-	if _, err := h.svc.Update(ctx, personal.ID, &label, nil); kindOf(err) != fault.NotFound {
+	if _, err := h.svc.Update(ctx, personal.ID, &label, nil, nil); kindOf(err) != fault.NotFound {
 		t.Fatalf("update removed = %v", err)
 	}
 	if _, err := h.svc.SetDefault(ctx, personal.ID); kindOf(err) != fault.NotFound {
