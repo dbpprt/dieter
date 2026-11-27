@@ -1,0 +1,26 @@
+{
+  "summary": "Adds support for worktrees in empty (unborn-branch) repositories. It covers orphan worktree creation, an initial local merge that bootstraps the base branch, root-commit history and diffs in changesets, and cleanup. It also adds an unborn-HEAD probe and tests.",
+  "findings": [
+    {
+      "file": "internal/git/workspace/manager.go",
+      "start_line": 178,
+      "end_line": 183,
+      "severity": "high",
+      "confidence": 9,
+      "title": "Repository lock acquired in provision is never released",
+      "body": "The change moves the LockRepository call to the top of provision and replaces `defer release()` with `_ = release`. The lock is a directory under git-locks, and it has a heartbeat goroutine that keeps touching it. Without a release call, the lock is held for the life of the process, and the heartbeat stops it from ever being treated as stale. Any later call that takes the same repository lock then blocks forever. That includes the next Ensure/provision for any worktree card in the project, mergeLocal (which now also locks), cleanup, and other callers of LockRepository. Trigger: create a worktree card, then create a second one or run merge_local. In the new tests this would hang, unless the lock is per-process and timed.",
+      "suggestion": "Keep the lock for the whole function: `release, err := m.LockRepository(...); if err != nil { return value, err }; defer release()`, placed inside the worktree-mode branch. Do the lock-protected work in a helper so the defer's scope covers the rest of provision."
+    },
+    {
+      "file": "internal/git/changeset/service.go",
+      "start_line": 309,
+      "end_line": 309,
+      "severity": "medium",
+      "confidence": 6,
+      "title": "git show changes per-commit diff for merge commits",
+      "body": "The per-commit file diff changed from `git diff <sha>^!` to `git show --format= --root <sha>^0`. For a merge commit, `git diff X^!` compares against the first parent. `git show` instead emits a combined (--cc) diff, which is empty for clean merges and has a different format otherwise. Trigger: a workspace branch containing a merge commit, such as one made by merge_commit, or a user merging the base into the branch. Opening that commit in Changes now shows an empty or differently formatted patch. This is a regression for existing non-empty repositories.",
+      "suggestion": "Use `git show --first-parent -m ...`, or keep `diff <sha>^!` and use `diff-tree --root -p` only when the commit has no parent."
+    }
+  ],
+  "security_concerns": "No"
+}

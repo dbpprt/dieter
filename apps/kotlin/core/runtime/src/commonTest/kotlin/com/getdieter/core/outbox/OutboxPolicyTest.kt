@@ -209,6 +209,17 @@ class OutboxPolicyTest {
             }
         val capable = OutboxPolicy.optimisticCard(mail)!!
         assertTrue(capable.mail_access && capable.vault_access, "the request's capabilities")
+        assertFalse(card.code_review)
+        val reviewed =
+            create("4").let { entry ->
+                val request = CreateConversationRequest.ADAPTER.decode(entry.request)
+                entry.copy(
+                    request =
+                        CreateConversationRequest.ADAPTER.encode(request.copy(code_review = true))
+                            .toByteString()
+                )
+            }
+        assertTrue(OutboxPolicy.optimisticCard(reviewed)!!.code_review, "the reviewer switch")
     }
 
     private fun metadata(at: Instant) = "{\"createdAt\":\"$at\"}".encodeUtf8()

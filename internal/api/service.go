@@ -61,6 +61,7 @@ type service struct {
 	*mailAPI
 	*foldersAPI
 	*providerAccountsAPI
+	*reviewsAPI
 }
 
 var (
@@ -86,6 +87,7 @@ var (
 	_ dieterv1connect.MailServiceHandler            = (*mailAPI)(nil)
 	_ dieterv1connect.FolderServiceHandler          = (*foldersAPI)(nil)
 	_ dieterv1connect.ProviderAccountServiceHandler = (*providerAccountsAPI)(nil)
+	_ dieterv1connect.ReviewServiceHandler          = (*reviewsAPI)(nil)
 )
 
 func newService(s *Server) *service {
@@ -97,7 +99,7 @@ func newService(s *Server) *service {
 		controlAPI: &controlAPI{s}, schedulesAPI: &schedulesAPI{s}, vaultAPI: &vaultAPI{s},
 		kvAPI: &kvAPI{s}, peerAPI: &peerAPI{s}, trustAPI: &trustAPI{s}, channelsAPI: &channelsAPI{s},
 		mailAPI: &mailAPI{s}, foldersAPI: &foldersAPI{s},
-		providerAccountsAPI: &providerAccountsAPI{s},
+		providerAccountsAPI: &providerAccountsAPI{s}, reviewsAPI: &reviewsAPI{s},
 	}
 }
 
@@ -127,6 +129,7 @@ func (svc *service) handlers(options ...connect.HandlerOption) map[string]http.H
 	add(dieterv1connect.NewMailServiceHandler(svc.mailAPI, options...))
 	add(dieterv1connect.NewFolderServiceHandler(svc.foldersAPI, options...))
 	add(dieterv1connect.NewProviderAccountServiceHandler(svc.providerAccountsAPI, options...))
+	add(dieterv1connect.NewReviewServiceHandler(svc.reviewsAPI, options...))
 	return result
 }
 

@@ -1253,6 +1253,37 @@ conversation in 24 hours. Send one message per finished report, use
 `--operation-id` to avoid duplicates. Revealed vault secrets are redacted from
 mail as from transcripts.
 
+### Code review
+
+The code reviewer is a separate, Dieter-managed harness that reviews a
+conversation's changes: everything that differs from the workspace's base
+(a worktree's base branch; a project checkout's HEAD), committed or not,
+untracked files included. One account-wide setting picks the harness, model,
+depth and limits; each review runs on the conversation's own machine on a
+disposable snapshot worktree, so it never touches the workspace.
+
+```sh
+dieter reviewer show [--format text|json]
+dieter reviewer update [--harness H] [--model M] [--effort E] [--account ID|LABEL] \
+  [--depth quick|thorough] [--max-findings N] [--min-confidence N] [--max-rounds N] \
+  [--instructions TEXT | --instructions-file FILE] [--ignore GLOB]... [--clear-ignore]
+dieter card create ... --code-review          # the agent gets request_code_review
+dieter card reviewer <card-id> on|off         # switch later; effective next turn
+dieter card review [--wait] [--focus TEXT] [--depth quick|thorough] [--format text|json] <card-id>
+dieter card reviews [--id REVIEW] [--format text|json] <card-id>
+```
+
+Chats take the same actions (`dieter chat review|reviews|reviewer`); schedules
+take `--code-review=true|false`. In a conversation with the reviewer, call the
+`request_code_review` tool when a change is complete (or run the
+`... review <id> --wait` command its instructions name): it blocks until the
+review finishes (quick about a minute, thorough several) and returns the
+findings, which the user also sees in the conversation. Fix what you agree
+with, say why you reject the rest, and request at most the configured number
+of rounds. An agent turn may review only its own conversation and cannot change
+the setting or the switch. A review the user starts reaches the agent with the
+next message.
+
 ### Synced folders
 
 A synced folder is a named directory Dieter keeps the same on the account's

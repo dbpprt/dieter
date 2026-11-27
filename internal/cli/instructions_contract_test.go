@@ -40,6 +40,8 @@ func TestAgentInstructionsNameRealCommandsAndFlags(t *testing.T) {
 		// The worker's CLI equivalents of its presentation and process tools.
 		instructionCLI + " card present c_one --path PATH [--line N]", instructionCLI + " chat present c_one --url URL",
 		instructionCLI + " remote exec --card c_one --detach -- COMMAND [ARG...]",
+		// The reviewer tool's CLI equivalent (code-review.mjs, enableCodeReview).
+		instructionCLI + " card review c_one --wait", instructionCLI + " chat review c_one --wait",
 	}
 	commands := 0
 	for _, text := range texts {

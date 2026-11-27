@@ -498,6 +498,11 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
         command.admin?.let {
             return runtime.administer(it)
         }
+        // The reviewer setting is account-wide; a conversation's switch and reviews go to its
+        // machine.
+        command.code_review?.let {
+            return runtime.executeCodeReview(it)
+        }
         command.channels?.let {
             return channels(it)
         }

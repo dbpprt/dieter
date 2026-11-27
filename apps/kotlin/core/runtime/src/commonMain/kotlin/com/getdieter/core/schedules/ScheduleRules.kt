@@ -229,6 +229,7 @@ object ScheduleDrafts {
                     workspace_mode = it.workspace_mode,
                     vault_access = it.vault_access,
                     mail_access = it.mail_access,
+                    code_review = it.code_review,
                     account_id = it.account_id,
                 )
             }

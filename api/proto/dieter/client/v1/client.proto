@@ -16,6 +16,7 @@ import "dieter/v1/git.proto";
 import "dieter/v1/machine.proto";
 import "dieter/v1/mail.proto";
 import "dieter/v1/projects.proto";
+import "dieter/v1/reviews.proto";
 import "dieter/v1/schedules.proto";
 import "dieter/v1/screens.proto";
 import "dieter/v1/settings.proto";
@@ -114,6 +115,8 @@ message Command {
     FoldersCommand folders = 86;
     // Claude and ChatGPT accounts; see ProvidersCommand.
     ProvidersCommand providers = 87;
+    // The code reviewer; see CodeReviewCommand.
+    CodeReviewCommand code_review = 88;
   }
   reserved 66;
   reserved "quotas";
@@ -121,6 +124,45 @@ message Command {
 
 // An action without arguments, e.g. a surface's refresh.
 message Step {}
+
+// The code reviewer: the account's reviewer setting, a conversation's
+// switch, and reviews the user starts. Reviews themselves arrive as
+// CODE_REVIEW timeline steps.
+message CodeReviewCommand {
+  oneof action {
+    // Reads the reviewer setting from the machine (empty: the local or
+    // first online machine); the result is reviewer_settings.
+    CodeReviewMachine settings = 1;
+    // Saves the reviewer setting (compare-and-set on settings.revision); the
+    // result is reviewer_settings.
+    CodeReviewSettingsUpdate update_settings = 2;
+    // Switches a conversation's reviewer on its machine; the result is the
+    // card.
+    CodeReviewSwitch set_enabled = 3;
+    // Starts reviewing a conversation's changes on its machine; the result is
+    // code_review (running). The review then shows in the transcript.
+    CodeReviewStart start = 4;
+  }
+}
+
+message CodeReviewMachine { string daemon_id = 1; }
+
+message CodeReviewSettingsUpdate {
+  string daemon_id = 1;
+  dieter.v1.ReviewerSettings settings = 2;
+}
+
+message CodeReviewSwitch {
+  string card_id = 1;
+  bool enabled = 2;
+}
+
+message CodeReviewStart {
+  string card_id = 1;
+  string focus = 2;
+  // "quick" or "thorough"; empty uses the setting.
+  string depth = 3;
+}
 
 // Turns a surface's mode on or off.
 message Toggle { bool on = 1; }
@@ -552,6 +594,10 @@ message CreationIntent {
   // Let the conversation's agent turns send the user mail. Fixed at
   // creation; never remembered between forms.
   bool mail_access = 16;
+  // Give the conversation's agent turns the code reviewer (request_code_review).
+  // Switchable later (CodeReviewCommand.set_enabled); never remembered
+  // between forms.
+  bool code_review = 17;
 }
 
 // Binds a creation form's surface (SLICE_CREATION_PREVIEW, observed with a
@@ -1306,6 +1352,10 @@ message Result {
     ProviderResetOutcome provider_reset = 57;
     // The account a ProvidersCommand.create added.
     ProviderAccountRef provider_account = 58;
+    // The reviewer setting (CodeReviewCommand.settings, update_settings).
+    dieter.v1.ReviewerSettings reviewer_settings = 59;
+    // A review a CodeReviewCommand.start started.
+    dieter.v1.CodeReview code_review = 60;
   }
 }
 
@@ -1857,6 +1907,24 @@ message ConversationState {
   // The conversation's provider account cannot run on its machine now, e.g.
   // it is not signed in there or its sign-in expired. Unset otherwise.
   ProviderNotice provider_notice = 32;
+  // The conversation's code reviewer. Unset until the conversation's card is
+  // known.
+  ConversationCodeReview code_review = 33;
+}
+
+// A conversation's code reviewer, for its header switch and the Changes
+// pane's "Review changes" action.
+message ConversationCodeReview {
+  // The agent gets request_code_review from its next turn.
+  bool enabled = 1;
+  // The switch can change it: the conversation is known and not archived.
+  bool can_toggle = 2;
+  // A review of this conversation is running (its latest review part).
+  bool running = 3;
+  // "Review changes" can start a review now: nothing is running.
+  bool can_start = 4;
+  // The latest review, when there is one.
+  TimelineCodeReview latest = 5;
 }
 
 message ProviderNotice {
@@ -1959,6 +2027,67 @@ message TimelineStep {
   bool tool_attention = 10;
   // A PEER_NOTICE step's channel message.
   TimelinePeerNotice peer_notice = 11;
+  // A CODE_REVIEW step's review.
+  TimelineCodeReview code_review = 12;
+}
+
+// A code review in the transcript: a data-code-review part (the JSON form of
+// dieter.v1.CodeReview), laid out by the core. The agent's
+// request_code_review tool call it answers is not a step of its own.
+message TimelineCodeReview {
+  string review_id = 1;
+  // "running", "completed", "failed" or "cancelled".
+  string status = 2;
+  bool running = 3;
+  // "Code review", "Reviewing changes…", "Code review failed".
+  string title = 4;
+  // "Claude Code · opus · quick · 42 s · 224k tokens".
+  string subtitle = 5;
+  // "4 findings · 2 high", "No findings", "No changes to review".
+  string counts_label = 6;
+  // "Round 2 · 2 resolved · 1 still open · 1 new"; empty for a first review.
+  string round_label = 7;
+  // "Requested by the agent" or "Requested by you".
+  string trigger_label = 8;
+  // The reviewer's summary of the change.
+  string summary = 9;
+  // The security concern; empty when the reviewer saw none.
+  string security = 10;
+  // Why a failed review failed.
+  string error = 11;
+  // Most severe first.
+  repeated TimelineCodeReviewFinding findings = 12;
+  // Findings of the previous review that are gone.
+  repeated TimelineCodeReviewFinding resolved = 13;
+  // "high", "medium", "low", or empty without findings.
+  string highest_severity = 14;
+  int64 started_at_millis = 15;
+  int64 finished_at_millis = 16;
+  // "12 files · +340 −41".
+  string change_label = 17;
+  string card_id = 18;
+}
+
+message TimelineCodeReviewFinding {
+  string id = 1;
+  // Repository-relative path, for opening it in the Changes pane.
+  string file = 2;
+  int32 start_line = 3;
+  int32 end_line = 4;
+  // "internal/git/unborn.go:23–26".
+  string location_label = 5;
+  // "high", "medium" or "low", and how a row says it: "High".
+  string severity = 6;
+  string severity_label = 7;
+  int32 confidence = 8;
+  string title = 9;
+  // Markdown.
+  string body = 10;
+  // Markdown; empty when the reviewer suggested no fix.
+  string suggestion = 11;
+  // "new", "open" or "resolved", and how a row says it: "Still open".
+  string status = 12;
+  string status_label = 13;
 }
 
 enum TimelineStepKind {
@@ -1974,6 +2103,8 @@ enum TimelineStepKind {
   TIMELINE_STEP_KIND_SUBAGENTS = 7;
   // An agent channel message that joined the running turn. Never routine.
   TIMELINE_STEP_KIND_PEER_NOTICE = 8;
+  // A code review (TimelineStep.code_review). Never routine.
+  TIMELINE_STEP_KIND_CODE_REVIEW = 9;
 }
 
 enum ToolCallStatus {

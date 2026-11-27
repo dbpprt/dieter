@@ -434,6 +434,31 @@ can also attack hosts outside the configured targets.
 local network are acceptable targets, or in a VM; give Strix a dedicated model
 key with a spending limit; list only targets you are authorized to test.
 
+### Code reviews
+
+A code review (`ReviewService`, `internal/engine/reviewer`) runs a second
+harness on the conversation's owner daemon with the same trust as a card turn:
+unsandboxed, as the daemon user, on the configured provider account.
+
+- **What it reads.** A disposable snapshot worktree of the change under
+  `DIETER_HOME/runtime/reviews/<id>`, checked out with hooks and LFS off and
+  removed afterwards. A misbehaving reviewer cannot edit the agent's
+  workspace, index or branch by accident; a hostile one has the same reach as
+  any card turn.
+- **Untrusted input.** The diff and the code were written by an agent. The
+  rubric tells the reviewer to treat them as data, and its answer is parsed
+  strictly: findings must name a changed file, text is bounded, and nothing
+  in it is executed.
+- **No new capabilities.** The reviewer turn gets no host tools, steering,
+  vault or mail. Findings go to the conversation and, as a tool result or a
+  prompt prefix, to the working agent; they never approve, merge or move a
+  card. An agent turn may start and read reviews only of its own conversation
+  and cannot change the reviewer setting or a conversation's switch.
+- **Setting integrity.** The reviewer setting is a replicated KV record written
+  only through `ReviewService` and validated on write and on ingest; a
+  malicious peer daemon of the same account can change the reviewer, as it can
+  any shared setting.
+
 ### Local attackers on a daemon host
 
 - Other local users, containers sharing the host network, and request-forgery

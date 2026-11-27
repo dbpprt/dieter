@@ -246,6 +246,7 @@ Options:
   --open-card skip_if_open|always
   --vault=true|false                 Cards it creates may use the account vault
   --mail=true|false                  Cards it creates may send you mail (dieter mail --help)
+  --code-review=true|false           Cards it creates get the code reviewer (dieter reviewer --help)
 `, actionName, map[bool]string{true: " SCHEDULE"}[updating])
 	defaults := &dieterv1.Schedule{Enabled: true, Cron: "0 9 * * 1-5", Timezone: "UTC", Action: "draft", OpenCardPolicy: "skip_if_open", MisfirePolicy: "latest", WorkspaceMode: "worktree"}
 	if current != nil && current.GetId() != "" {
@@ -272,6 +273,7 @@ Options:
 	openCard := set.String("open-card", defaults.GetOpenCardPolicy(), "open-card policy")
 	vaultAccess := set.Bool("vault", defaults.GetVaultAccess(), "cards created by this schedule may use the account vault")
 	mailAccess := set.Bool("mail", defaults.GetMailAccess(), "cards created by this schedule may send the user mail")
+	codeReview := set.Bool("code-review", defaults.GetCodeReview(), "cards created by this schedule get the code reviewer")
 	account := set.String("account", defaults.GetAccountId(), "provider account ID or label")
 
 	providerOptions := parameterFlags{}
@@ -323,7 +325,7 @@ Options:
 			return err
 		}
 	}
-	draft := &dieterv1.ScheduleDraft{CheckoutId: *checkout, ProjectId: projectValue.GetId(), BoardId: boardValue.GetId(), Name: *name, Description: *description, Cron: *expression, Timezone: *timezone, Enabled: *enabled, Action: *action, TitleTemplate: *title, PromptTemplate: promptValue, Provider: *provider, Model: *modelName, Effort: *effort, LabelIds: splitCSV(*labels), OpenCardPolicy: *openCard, MisfirePolicy: "latest", ProviderOptions: map[string]string(providerOptions), WorkspaceMode: *workspaceMode, VaultAccess: *vaultAccess, MailAccess: *mailAccess, AccountId: accountID}
+	draft := &dieterv1.ScheduleDraft{CheckoutId: *checkout, ProjectId: projectValue.GetId(), BoardId: boardValue.GetId(), Name: *name, Description: *description, Cron: *expression, Timezone: *timezone, Enabled: *enabled, Action: *action, TitleTemplate: *title, PromptTemplate: promptValue, Provider: *provider, Model: *modelName, Effort: *effort, LabelIds: splitCSV(*labels), OpenCardPolicy: *openCard, MisfirePolicy: "latest", ProviderOptions: map[string]string(providerOptions), WorkspaceMode: *workspaceMode, VaultAccess: *vaultAccess, MailAccess: *mailAccess, CodeReview: *codeReview, AccountId: accountID}
 	request := &dieterv1.SaveScheduleRequest{Schedule: draft}
 	var value *dieterv1.Schedule
 	if updating {

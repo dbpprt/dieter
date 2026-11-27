@@ -288,6 +288,25 @@ final class ConversationModel {
         return await page { command, cardID in command.loadLaterMessages = .with { $0.cardID = cardID } }
     }
 
+    /// Switches the shown conversation's code reviewer; the agent gets it (or
+    /// loses it) from its next turn.
+    func setCodeReview(enabled: Bool) async throws {
+        guard let core, let cardID = observedCardID else { return }
+        try await core.dispatch {
+            $0.codeReview.setEnabled = .with {
+                $0.cardID = cardID
+                $0.enabled = enabled
+            }
+        }
+    }
+
+    /// Asks the code reviewer to review the shown conversation's changes now;
+    /// the review shows in its transcript.
+    func startCodeReview() async throws {
+        guard let core, let cardID = observedCardID else { return }
+        try await core.dispatch { $0.codeReview.start = .with { $0.cardID = cardID } }
+    }
+
     func returnToLatest() {
         guard let core, let cardID = observedCardID else { return }
         Task { _ = try? await core.dispatch { $0.returnToLatest = .with { $0.cardID = cardID } } }
@@ -375,6 +394,10 @@ struct ConversationChrome: Equatable, Sendable {
     var steerableID = ""
     /// The composer's agent pickers; nil until the conversation's card and machine are known.
     var agent: ClientAgentControlsState?
+    /// The conversation's code reviewer switch and whether a review can start;
+    /// nil until its card is known. The latest review is left out: it shows
+    /// in the transcript.
+    var codeReview: ClientConversationCodeReview?
 
     init() {}
 
@@ -387,5 +410,10 @@ struct ConversationChrome: Equatable, Sendable {
         canHalt = state.canHalt
         steerableID = state.steerableID
         agent = state.hasAgent ? state.agent : nil
+        if state.hasCodeReview {
+            var review = state.codeReview
+            review.clearLatest()
+            codeReview = review
+        }
     }
 }

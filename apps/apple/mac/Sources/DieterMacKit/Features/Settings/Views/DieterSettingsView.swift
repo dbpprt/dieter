@@ -8,6 +8,7 @@ enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
     case devices = "Devices"
     case folders = "Folders"
     case providers = "Providers"
+    case codeReviewer = "Code reviewer"
     case prompts = "Prompts"
     case notifications = "Notifications"
     case island = "Island"
@@ -15,6 +16,9 @@ enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
     case experimental = "Experimental"
 
     var id: String { rawValue }
+
+    /// The navigation row's accessibility identifier suffix, e.g. "code-reviewer".
+    var identifier: String { rawValue.lowercased().replacingOccurrences(of: " ", with: "-") }
 
     var symbol: String {
         switch self {
@@ -24,6 +28,7 @@ enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .devices: "lock.laptopcomputer"
         case .folders: "folder"
         case .providers: "key.horizontal"
+        case .codeReviewer: "eye"
         case .prompts: "text.quote"
         case .notifications: "bell"
         case .island: "capsule.tophalf.filled"
@@ -40,6 +45,7 @@ enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .devices: "Trusted devices and end-to-end encryption"
         case .folders: "This Mac's copies of your synced folders"
         case .providers: "Claude and ChatGPT accounts"
+        case .codeReviewer: "The reviewer agents ask to check their changes"
         case .prompts: "Global and scoped agent instructions"
         case .notifications: "macOS alerts for agent activity"
         case .island: "Live activity around the notch"
@@ -68,8 +74,8 @@ struct DieterSettingsView: View {
                                 SettingsNavigationRow(section: section, selected: section == store.settingsSection)
                             }
                             .buttonStyle(.plain)
-                            .accessibilityIdentifier("settings.\(section.rawValue.lowercased())")
-                            .e2eTarget("settings.\(section.rawValue.lowercased())")
+                            .accessibilityIdentifier("settings.\(section.identifier)")
+                            .e2eTarget("settings.\(section.identifier)")
                         }
                     }
                     .padding(8)
@@ -105,6 +111,7 @@ struct DieterSettingsView: View {
                         case .devices: DevicesSettings()
                         case .folders: FolderSettingsPage()
                         case .providers: ProvidersSettings()
+                        case .codeReviewer: CodeReviewerSettings()
                         case .prompts: PromptSettingsEditor()
                         case .notifications: NotificationSettings()
                         case .island: IslandSettings()

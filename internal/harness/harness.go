@@ -124,6 +124,15 @@ type Request struct {
 	// in their instructions for harnesses that load host tools on demand.
 	PresentCommand string `json:"presentCommand,omitempty"`
 	ProcessCommand string `json:"processCommand,omitempty"`
+	// CodeReviewEnabled offers the agent the request_code_review tool, answered
+	// by CodeReview; ReviewCommand is its CLI equivalent for harnesses that
+	// load host tools on demand.
+	CodeReviewEnabled bool              `json:"codeReviewEnabled,omitempty"`
+	ReviewCommand     string            `json:"reviewCommand,omitempty"`
+	CodeReview        CodeReviewHandler `json:"-"`
+	// CodeReviewMaxRounds is the reviewer setting's per-task review limit,
+	// named in the reviewer instructions.
+	CodeReviewMaxRounds int `json:"codeReviewMaxRounds,omitempty"`
 	// SteerEnabled keeps the worker's stdin open for steer frames: Steer
 	// delivers agent channel messages into the running turn, and the worker
 	// answers each with a steer-result Output.
@@ -177,6 +186,8 @@ type Output struct {
 	Presentation json.RawMessage `json:"presentation,omitempty"`
 	Message      string          `json:"error,omitempty"`
 	ProcessCall  *ProcessCall    `json:"processCall,omitempty"`
+	// ReviewCall is a request_code_review call (type code-review).
+	ReviewCall *ProcessCall `json:"reviewCall,omitempty"`
 	// ID, Accepted and Reason answer a SteerCall (type steer-result).
 	ID       string `json:"id,omitempty"`
 	Accepted bool   `json:"accepted,omitempty"`
@@ -455,9 +466,17 @@ func (r *SubprocessRunner) Run(ctx context.Context, request Request, emit func(O
 	}
 	// Host replies and steer frames share the worker's stdin; one line per write.
 	host := &lockedWriter{writer: stdin}
-	if !request.BackgroundProcessesEnabled && !request.SteerEnabled {
+	if !request.BackgroundProcessesEnabled && !request.SteerEnabled && !request.CodeReviewEnabled {
 		_ = stdin.Close()
 	}
+	// Code reviews take minutes: each call is answered on its own goroutine,
+	// never in this read loop, and all of them end before Run returns.
+	reviewCtx, cancelReviews := context.WithCancel(ctx)
+	var reviews sync.WaitGroup
+	defer func() {
+		cancelReviews()
+		reviews.Wait()
+	}()
 	steering := make(chan struct{})
 	defer close(steering)
 	if request.SteerEnabled && request.Steer != nil {
@@ -512,6 +531,17 @@ func (r *SubprocessRunner) Run(ctx context.Context, request Request, emit func(O
 			if err := replyProcessCall(ctx, host, request.BackgroundProcess, output.ProcessCall); err != nil {
 				return err
 			}
+			continue
+		}
+		if output.Type == "code-review" {
+			if err := validCodeReviewCall(output.ReviewCall); err != nil {
+				return err
+			}
+			reviews.Add(1)
+			go func(call ProcessCall) {
+				defer reviews.Done()
+				replyCodeReview(reviewCtx, host, request.CodeReview, call)
+			}(*output.ReviewCall)
 			continue
 		}
 		if output.Type == "chunk" {

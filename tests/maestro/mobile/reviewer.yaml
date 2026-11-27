@@ -1,0 +1,149 @@
+# Code review: a new task with the reviewer on. The mock agent writes
+# mock-review.txt and asks for a review (request_code_review); the fixture's
+# reviewer is the mock harness, which reports one finding on that file. The
+# review card shows in the conversation and the agent reads its result.
+# Settings › Code reviewer opens with the fixture's saved setting and saves it.
+appId: ${APP_ID}
+name: Code review
+tags: [smoke]
+---
+- runFlow: common/launch.yaml
+- tapOn:
+    text: "Projects"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: "Main"
+    timeout: 40000
+- tapOn:
+    text: "Main"
+    waitToSettleTimeoutMs: 500
+- tapOn:
+    id: chrome-new-task
+    waitToSettleTimeoutMs: 500
+# Switch the reviewer on before typing: with the keyboard up, iOS does not
+# report the switch below the fields (mail.yaml reaches its switch the same
+# way). Android's form focuses a field, so its keyboard is open from the start
+# and covers the switch: close it first (as changes.yaml does).
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - runFlow:
+          when:
+            visible: ".*access your contacts.*"
+          commands:
+            - tapOn: "DON.T ALLOW|Don.t allow"
+      - hideKeyboard
+# Not centred: the switch is near the end of the form, which cannot scroll it
+# to the middle of a tall screen.
+- scrollUntilVisible:
+    element:
+      id: code-review
+    direction: DOWN
+- tapOn:
+    id: code-review
+    waitToSettleTimeoutMs: 500
+- takeScreenshot: code-review-creation-toggle
+- scrollUntilVisible:
+    element:
+      id: task-title
+    direction: UP
+- tapOn:
+    id: task-title
+    waitToSettleTimeoutMs: 500
+- inputText: "Reviewed task"
+- tapOn:
+    id: task-prompt
+    waitToSettleTimeoutMs: 500
+- inputText: "mock-code-review"
+- tapOn:
+    id: chrome-start-working
+    waitToSettleTimeoutMs: 500
+# A safety bound: mock turns take seconds, but hosted macOS runners shared with
+# the simulator have stalled worker start-up for minutes.
+- extendedWaitUntil:
+    visible: "Mock agent read the code review."
+    timeout: 300000
+- scrollUntilVisible:
+    element:
+      id: "code-review-rev_.*"
+    direction: UP
+    timeout: 20000
+- assertVisible: "Code review"
+- assertNotVisible: "Reviewing changes…"
+- assertVisible: "1 finding.*"
+# The finding's title expands it; its location opens Changes at the file.
+- tapOn:
+    text: "Mock finding"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: "The mock reviewer always reports.*"
+    timeout: 10000
+- takeScreenshot: code-review-card
+- tapOn:
+    id: "code-review-location-rev_.*"
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible: ".*A change for the mock code reviewer.*"
+    timeout: 20000
+- takeScreenshot: code-review-changes
+- runFlow: common/back.yaml
+# Flows share one fixture and run in file order (this one after inbox): move
+# the task out of Running so later flows find the board as they expect it
+# (see task.yaml for the chip row).
+- repeat:
+    while:
+      notVisible:
+        id: move-review
+    times: 15
+    commands:
+      - runFlow:
+          when:
+            visible:
+              id: composer-chips
+          commands:
+            - swipe:
+                from:
+                  id: composer-chips
+                direction: LEFT
+      - waitForAnimationToEnd:
+          timeout: 2000
+- extendedWaitUntil:
+    visible:
+      id: move-review
+    timeout: 60000
+- tapOn:
+    id: move-review
+    waitToSettleTimeoutMs: 500
+# The reviewer setting: the fixture saved the mock harness.
+- runFlow: common/back.yaml
+- runFlow:
+    file: common/more.yaml
+    env:
+      PLACE: settings
+- scrollUntilVisible:
+    element:
+      id: settings-code-reviewer
+    timeout: 20000
+# Rows under a floating bar (iOS, Android's glass navigation) count as visible
+# before the list has scrolled past them, so scroll to the next section too.
+- scrollUntilVisible:
+    element:
+      text: "Synced folders"
+    timeout: 20000
+- tapOn:
+    id: settings-code-reviewer
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible:
+      id: code-reviewer-settings
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      id: code-reviewer-save
+    timeout: 20000
+- takeScreenshot: code-reviewer-settings
+- tapOn:
+    id: code-reviewer-save
+    waitToSettleTimeoutMs: 500
+- assertNotVisible: ".*refused.*|.*failed.*"

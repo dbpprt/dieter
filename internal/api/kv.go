@@ -115,6 +115,9 @@ func (s *Server) mutateKV(ctx context.Context, ref *dieterv1.KVRef, m kv.Mutatio
 	if schema.ProviderNamespaceKind(ref.GetNamespace()) {
 		return nil, fault.New(fault.PermissionDenied, "provider account records are written by daemons; use dieter provider")
 	}
+	if schema.ReviewerNamespaceKind(ref.GetNamespace()) {
+		return nil, fault.New(fault.PermissionDenied, "the reviewer setting is written by daemons; use dieter reviewer")
+	}
 	m.Namespace, m.Key = ref.GetNamespace(), ref.GetKey()
 	record, err := s.store.KV.Mutate(identity, m)
 	if err != nil {

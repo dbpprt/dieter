@@ -91,6 +91,8 @@ data class CreationInput(
     val vaultAccess: Boolean = false,
     /** The conversation's agent turns may send the user mail. */
     val mailAccess: Boolean = false,
+    /** The conversation's agent turns get the code reviewer; switchable later. */
+    val codeReview: Boolean = false,
 )
 
 /** The agent catalog a new conversation is checked against, relative to its destination machine. */
@@ -401,6 +403,7 @@ object Creation {
             auto_generate_title = Titles.generated(input.title, input.prompt),
             vault_access = input.vaultAccess,
             mail_access = input.mailAccess,
+            code_review = input.codeReview,
             account_id = input.selection.account_id,
         )
     }

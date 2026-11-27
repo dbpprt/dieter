@@ -37,6 +37,7 @@ import (
 	"github.com/dbpprt/dieter/internal/platform/buildinfo"
 	"github.com/dbpprt/dieter/internal/platform/fault"
 	"github.com/dbpprt/dieter/internal/replication/crdt"
+	"github.com/dbpprt/dieter/internal/replication/schema"
 	"github.com/dbpprt/dieter/internal/security/localauth"
 	"github.com/dbpprt/dieter/internal/security/roster"
 	boardstore "github.com/dbpprt/dieter/internal/store"
@@ -207,6 +208,15 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute, mailR
 	}
 	if e2eFixture {
 		if err := seedE2EFixture(data, project, board); err != nil {
+			return err
+		}
+		// The fixture runs real worker processes: the default reviewer
+		// (Claude Code) would reach a real provider. Reviews use the mock
+		// harness, which answers reviewer prompts deterministically.
+		if _, err := data.KV.PutReviewerSettings(schema.ReviewerSettingsRecord{
+			Harness: "mock", Model: "mock", Depth: model.CodeReviewDepthQuick,
+			MaxFindings: schema.ReviewerDefaultMaxFindings, MaxRounds: schema.ReviewerDefaultMaxRounds,
+		}, ""); err != nil {
 			return err
 		}
 	}

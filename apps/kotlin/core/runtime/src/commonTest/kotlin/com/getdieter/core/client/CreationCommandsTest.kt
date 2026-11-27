@@ -103,6 +103,15 @@ class CreationCommandsTest {
     }
 
     @Test
+    fun theFormsIntentCarriesTheCodeReviewer() {
+        val input = CreationInput(project = project, board = board, codeReview = true)
+        assertTrue(creationIntent(input).code_review)
+        assertTrue(Creation.request(input).code_review)
+        assertFalse(creationIntent(CreationInput(project = project)).code_review, "off by default")
+        assertFalse(Creation.request(CreationInput(project = project)).code_review)
+    }
+
+    @Test
     fun formChoicesSurviveClosingAndReloadingWithoutSubmission() {
         val storage =
             com.getdieter.core.storage.CoreStorage(

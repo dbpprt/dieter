@@ -88,6 +88,8 @@ object Parts {
             "image",
             // Agent channel messages are other agents' words, not this message's.
             "data-peer-notice",
+            // A code review is the reviewer's, shown as a card.
+            "data-code-review",
         )
 
     /**

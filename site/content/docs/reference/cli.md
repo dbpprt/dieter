@@ -39,6 +39,7 @@ Commands:
   status       Show target daemon health, runtime, route, and state counts
   harness      List target daemon harnesses, models, and options
   provider     Add Claude and ChatGPT accounts, sign in on machines, read plan usage
+  reviewer     Show or change the account's code reviewer: harness, model, depth, limits
   project      Create, browse, configure archive cleanup, relocate, and restore projects
   board        Manage boards, retirement/restore, hostnames, workflows, and labels
   card         Create, edit, read, present files, merge, and manage board conversations
@@ -455,6 +456,63 @@ command inside Dieter turns. It needs the turn's DIETER_TURN_TOKEN and talks
 only to the local daemon.
 ```
 
+## dieter reviewer
+
+```text
+Usage: dieter reviewer <action>
+
+Actions:
+  show     Print the account's code reviewer setting
+  update   Change the harness, model, depth or limits of the code reviewer
+
+The code reviewer is a separate, Dieter-managed harness that reviews a
+conversation's changes: everything that differs from the workspace's base,
+committed or not. One setting covers every machine of the account; each review
+runs on the conversation's own machine, on a disposable snapshot of its
+workspace. Give a conversation the reviewer with --code-review on card or chat
+create (or dieter card reviewer CARD on); its agent then gets a
+request_code_review tool. Review a conversation yourself with
+dieter card review CARD --wait.
+```
+
+### dieter reviewer show
+
+```text
+Usage: dieter reviewer show [--format text|json]
+
+Print the account's code reviewer setting. Until someone saves one, the
+defaults are shown and "configured" is false.
+```
+
+### dieter reviewer update
+
+```text
+Usage: dieter reviewer update [options]
+
+Change the account's code reviewer setting. Options you leave out keep their
+current value.
+
+Options:
+  --harness HARNESS          Catalog harness (see dieter harness list); Strix is refused
+  --model MODEL              Model of that harness
+  --effort EFFORT            Reasoning effort (empty: the model's default)
+  --account ID|LABEL         Provider account for Claude Code and Codex
+                             reviewers; "" uses the provider's default
+  --depth quick|thorough     quick: one pass over the inlined diff (default);
+                             thorough: every finding confirmed in the code
+  --max-findings N           At most N findings per review (1-20, default 6)
+  --min-confidence N         Drop findings rated below N (0-10, default 0)
+  --max-rounds N             Reviews the agent may request per task (1-10, default 3)
+  --instructions TEXT        Extra instructions for every review (4 KiB)
+  --instructions-file FILE   Read them from FILE or -
+  --ignore GLOB              Leave matching paths out of reviews; repeat. Lock
+                             files and generated code are always left out
+  --clear-ignore             Remove every --ignore glob
+  --format text|json         Output format
+
+Agent turns cannot change the setting.
+```
+
 ## dieter project (alias: projects)
 
 ```text
@@ -788,6 +846,9 @@ Actions:
   move         Move a card to another lane
   labels       Replace a card's board labels
   present      Show a file or URL in the conversation's workspace pane
+  review       Review the card's changes with the code reviewer
+  reviews      List the card's code reviews, or show one
+  reviewer     Switch the card's code reviewer on or off
   read         Mark a displayed model response as seen
   rename       Rename a card
   update       Update the title, or a draft's task brief and agent settings
@@ -811,6 +872,41 @@ Paths belong to its owning daemon/worktree (relative paths are recommended).
 URLs must be HTTP(S). File size is limited to 5 MiB. This does not resume the
 agent or guarantee that a connected client has displayed the request.
 Returns the durable presentation ID and normalized target as JSON.
+Global --machine selects the owning daemon through authenticated direct/relay routes.
+```
+
+### dieter card review
+
+```text
+Usage: dieter card review [--wait] [--focus TEXT] [--depth quick|thorough] [--format text|json] CARD
+
+Review the conversation's changes with the account's code reviewer (see
+dieter reviewer --help): everything that differs from the workspace's base,
+committed or not, untracked files included. The review runs on the
+conversation's machine and appears in the conversation. Without --wait it
+prints the running review's ID; with --wait it waits for the result and prints
+the findings. An agent turn may review only its own conversation, and its
+review counts as the agent's.
+Global --machine selects the owning daemon through authenticated direct/relay routes.
+```
+
+### dieter card reviews
+
+```text
+Usage: dieter card reviews [--id REVIEW] [--format text|json] CARD
+
+List the conversation's code reviews, newest first, or show one with --id.
+Global --machine selects the owning daemon through authenticated direct/relay routes.
+```
+
+### dieter card reviewer
+
+```text
+Usage: dieter card reviewer CARD on|off
+
+Switch the conversation's code reviewer on or off. From its next turn, the
+agent gets (or loses) the request_code_review tool and its instructions.
+Agent turns cannot switch it.
 Global --machine selects the owning daemon through authenticated direct/relay routes.
 ```
 
@@ -842,6 +938,9 @@ Options:
                             vault (fixed at creation; see dieter vault --help)
   --mail                    Let this conversation's agent turns send you mail
                             (fixed at creation; see dieter mail --help)
+  --code-review             Give this conversation's agent turns the code
+                            reviewer (switch later with dieter card reviewer;
+                            see dieter reviewer --help)
   --format json|id          Output format
 
 Destination defaults to the running local daemon. Pass global --machine ID|NAME
@@ -1033,8 +1132,8 @@ Usage: dieter chat <action>
 
 Actions:
   create, list, show, context, transcript, poll, watch, tool-output, send,
-  queue, cancel, present, read, rename, update, fork, archive, unarchive,
-  workspace, pin, unpin
+  queue, cancel, present, review, reviews, reviewer, read, rename, update,
+  fork, archive, unarchive, workspace, pin, unpin
 
 A standalone chat is a conversation without a board: it has no lanes or labels
 and starts when created. Actions take the same options as their card versions
@@ -1051,6 +1150,41 @@ Paths belong to its owning daemon/worktree (relative paths are recommended).
 URLs must be HTTP(S). File size is limited to 5 MiB. This does not resume the
 agent or guarantee that a connected client has displayed the request.
 Returns the durable presentation ID and normalized target as JSON.
+Global --machine selects the owning daemon through authenticated direct/relay routes.
+```
+
+### dieter chat review
+
+```text
+Usage: dieter chat review [--wait] [--focus TEXT] [--depth quick|thorough] [--format text|json] CHAT
+
+Review the conversation's changes with the account's code reviewer (see
+dieter reviewer --help): everything that differs from the workspace's base,
+committed or not, untracked files included. The review runs on the
+conversation's machine and appears in the conversation. Without --wait it
+prints the running review's ID; with --wait it waits for the result and prints
+the findings. An agent turn may review only its own conversation, and its
+review counts as the agent's.
+Global --machine selects the owning daemon through authenticated direct/relay routes.
+```
+
+### dieter chat reviews
+
+```text
+Usage: dieter chat reviews [--id REVIEW] [--format text|json] CHAT
+
+List the conversation's code reviews, newest first, or show one with --id.
+Global --machine selects the owning daemon through authenticated direct/relay routes.
+```
+
+### dieter chat reviewer
+
+```text
+Usage: dieter chat reviewer CHAT on|off
+
+Switch the conversation's code reviewer on or off. From its next turn, the
+agent gets (or loses) the request_code_review tool and its instructions.
+Agent turns cannot switch it.
 Global --machine selects the owning daemon through authenticated direct/relay routes.
 ```
 
@@ -1080,6 +1214,9 @@ Options:
                             vault (fixed at creation; see dieter vault --help)
   --mail                    Let this conversation's agent turns send you mail
                             (fixed at creation; see dieter mail --help)
+  --code-review             Give this conversation's agent turns the code
+                            reviewer (switch later with dieter chat reviewer;
+                            see dieter reviewer --help)
   --format json|id          Output format
 
 Destination defaults to the running local daemon. Pass global --machine ID|NAME
@@ -2246,6 +2383,7 @@ Options:
   --open-card skip_if_open|always
   --vault=true|false                 Cards it creates may use the account vault
   --mail=true|false                  Cards it creates may send you mail (dieter mail --help)
+  --code-review=true|false           Cards it creates get the code reviewer (dieter reviewer --help)
 ```
 
 ### dieter schedule list
@@ -2284,6 +2422,7 @@ Options:
   --open-card skip_if_open|always
   --vault=true|false                 Cards it creates may use the account vault
   --mail=true|false                  Cards it creates may send you mail (dieter mail --help)
+  --code-review=true|false           Cards it creates get the code reviewer (dieter reviewer --help)
 ```
 
 ### dieter schedule run

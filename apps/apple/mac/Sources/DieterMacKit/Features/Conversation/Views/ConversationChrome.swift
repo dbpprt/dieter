@@ -32,6 +32,19 @@ struct ConversationActionsMenu: View {
                 if context.model.chrome.canHalt {
                     Button("Halt agent", role: .destructive) { Task { await context.cancel(card) } }
                 }
+                // The agent's reviewer applies from its next turn.
+                if let review = context.codeReview {
+                    Divider()
+                    Toggle(
+                        isOn: Binding(
+                            get: { review.enabled },
+                            set: { on in Task { await context.setCodeReview(enabled: on) } })
+                    ) {
+                        Label("Code review", systemImage: "eye")
+                    }
+                    .disabled(!review.canToggle)
+                    .accessibilityIdentifier("code-review-switch")
+                }
                 Divider()
                 Button("Archive \(standalone ? "chat" : "card")", role: .destructive) {
                     Task { await context.archive(card, archived: true) }

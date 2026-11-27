@@ -594,6 +594,39 @@ func (s *Store) AppendPeerNotice(cardRef, turnID, responseMessageID string, part
 	return conversation, err
 }
 
+// AppendCodeReview records a code review as a data-code-review part. A review
+// already in the conversation (same ID) is replaced where it is, so a running
+// review becomes its final form in place. A new review joins messageID (the
+// turn's assistant message for agent reviews), or a new assistant message
+// when messageID is empty.
+func (s *Store) AppendCodeReview(cardRef, turnID, messageID string, review model.CodeReview) (model.Conversation, error) {
+	data, err := json.Marshal(review)
+	if err != nil {
+		return model.Conversation{}, err
+	}
+	part := model.UIMessagePart{Type: model.CodeReviewPartType, Data: data}
+	_, conversation, err := s.Append(cardRef, "code-review", turnID, messageID, part)
+	return conversation, err
+}
+
+// CodeReviews returns the conversation's reviews in transcript order.
+func CodeReviews(conversation model.Conversation) []model.CodeReview {
+	var reviews []model.CodeReview
+	for _, message := range conversation.Messages {
+		for _, part := range message.Parts {
+			if part.Type != model.CodeReviewPartType {
+				continue
+			}
+			var review model.CodeReview
+			if json.Unmarshal(part.Data, &review) == nil && review.ID != "" {
+				review.MessageID = message.ID
+				reviews = append(reviews, review)
+			}
+		}
+	}
+	return reviews
+}
+
 func (s *Store) AppendCapability(cardRef, turnID string, capability json.RawMessage) (model.ConversationEvent, model.Conversation, error) {
 	return s.Append(cardRef, "capability", turnID, "", capability)
 }
@@ -729,6 +762,11 @@ func reduceConversation(conversation *model.Conversation, event model.Conversati
 		if json.Unmarshal(event.Data, &part) == nil && part.Type == PeerNoticePartType {
 			reducePeerNotice(conversation, event.MessageID, part, event.CreatedAt)
 		}
+	case "code-review":
+		var part model.UIMessagePart
+		if json.Unmarshal(event.Data, &part) == nil && part.Type == model.CodeReviewPartType {
+			reduceCodeReview(conversation, event.MessageID, part, event.CreatedAt)
+		}
 	}
 	// Provider connectivity only describes a running turn.
 	if conversation.Status != "running" {
@@ -748,6 +786,45 @@ func reducePeerNotice(conversation *model.Conversation, messageID string, part m
 	}
 	if messageID == "" {
 		messageID = home.NewID("msg_")
+	}
+	metadata, _ := json.Marshal(map[string]string{"createdAt": createdAt})
+	conversation.Messages = append(conversation.Messages, model.UIMessage{ID: messageID, Role: "assistant", Metadata: metadata, Parts: []model.UIMessagePart{part}})
+}
+
+// reduceCodeReview replaces the review's existing part, or adds it to the
+// named assistant message (created under that ID when the stream has not
+// started it yet), or to a new assistant message.
+func reduceCodeReview(conversation *model.Conversation, messageID string, part model.UIMessagePart, createdAt string) {
+	var review struct {
+		ID string `json:"id"`
+	}
+	if json.Unmarshal(part.Data, &review) != nil || review.ID == "" {
+		return
+	}
+	for index := len(conversation.Messages) - 1; index >= 0; index-- {
+		parts := conversation.Messages[index].Parts
+		for partIndex := range parts {
+			if parts[partIndex].Type != model.CodeReviewPartType {
+				continue
+			}
+			var existing struct {
+				ID string `json:"id"`
+			}
+			if json.Unmarshal(parts[partIndex].Data, &existing) == nil && existing.ID == review.ID {
+				parts[partIndex] = part
+				return
+			}
+		}
+	}
+	if messageID != "" {
+		for index := len(conversation.Messages) - 1; index >= 0; index-- {
+			if conversation.Messages[index].ID == messageID {
+				conversation.Messages[index].Parts = append(conversation.Messages[index].Parts, part)
+				return
+			}
+		}
+	} else {
+		messageID = "msg_review_" + review.ID
 	}
 	metadata, _ := json.Marshal(map[string]string{"createdAt": createdAt})
 	conversation.Messages = append(conversation.Messages, model.UIMessage{ID: messageID, Role: "assistant", Metadata: metadata, Parts: []model.UIMessagePart{part}})

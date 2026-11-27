@@ -4,8 +4,10 @@ import com.getdieter.api.v1.MessagePart
 import com.getdieter.api.v1.Subagent
 import com.getdieter.api.v1.TaskPlan
 import com.getdieter.api.v1.UiMessage
+import com.getdieter.client.v1.TimelineCodeReview
 import com.getdieter.client.v1.TimelinePeerNotice
 import com.getdieter.core.channels.PeerNotices
+import com.getdieter.core.reviews.CodeReviews
 import kotlin.time.Instant
 
 enum class StepKind {
@@ -21,6 +23,9 @@ enum class StepKind {
 
     /** An agent channel message that joined the running turn; never routine. */
     PEER_NOTICE,
+
+    /** A code review ([CodeReviews]); never routine. */
+    CODE_REVIEW,
 }
 
 /** One visible part of a message; adjacent prose is coalesced into one step. */
@@ -39,6 +44,8 @@ data class TimelineStep(
     val partIndex: Int = -1,
     /** A [StepKind.PEER_NOTICE] step's channel message, read once from its payload. */
     val peerNotice: TimelinePeerNotice? = null,
+    /** A [StepKind.CODE_REVIEW] step's review, read once from its payload. */
+    val codeReview: TimelineCodeReview? = null,
 ) {
     val routine: Boolean
         get() = kind == StepKind.TOOL && !Parts.isApprovalTool(part) || kind == StepKind.REASONING
@@ -156,6 +163,8 @@ data class TimelineOptions(
      * stay readable.
      */
     val failedMessageId: String? = null,
+    /** Harness ID → its catalog name, for code reviews' subtitles. */
+    val harnessNames: Map<String, String> = emptyMap(),
 )
 
 /**
@@ -182,6 +191,7 @@ internal data class StepInputs(
     val hideFailures: Boolean,
     val hidePlanTools: Boolean,
     val subagents: List<Subagent>,
+    val harnessNames: Map<String, String>,
 )
 
 data class Timeline(val items: List<TimelineItem>, val unattachedPlans: List<TaskPlan>)
@@ -244,6 +254,7 @@ object TimelineBuilder {
                     hidesFailures(message, options),
                     options.hidePlanTools && messagePlans.isNotEmpty(),
                     messageAgents,
+                    options.harnessNames,
                 )
             val entry =
                 previous[key]?.takeIf { it.message === message && it.inputs == inputs }
@@ -322,7 +333,8 @@ object TimelineBuilder {
     /**
      * The visible steps of one message. Tool calls that delegated to one of [subagents] become a
      * single [StepKind.SUBAGENTS] step at the first delegating call; agents without one follow the
-     * message's other steps.
+     * message's other steps. A code review is a [StepKind.CODE_REVIEW] step, and the agent's
+     * request for it leaves no tool row of its own; an unreadable review is left out.
      */
     fun steps(
         message: UiMessage,
@@ -335,6 +347,7 @@ object TimelineBuilder {
         val steps = mutableListOf<TimelineStep>()
         val delegated =
             subagents.mapNotNullTo(HashSet()) { it.parent_tool_call_id.ifEmpty { null } }
+        val answered = CodeReviews.answeredCalls(message)
         var agentsShown = false
         fun showAgents() {
             if (agentsShown || subagents.isEmpty()) return
@@ -349,6 +362,20 @@ object TimelineBuilder {
                 )
         }
         for ((index, part) in message.parts.withIndex()) {
+            if (CodeReviews.isCodeReview(part)) {
+                val review = CodeReviews.review(part) { options.harnessNames[it] } ?: continue
+                steps +=
+                    TimelineStep(
+                        "$key:part:$index",
+                        message.id,
+                        StepKind.CODE_REVIEW,
+                        part,
+                        partIndex = index,
+                        codeReview = review,
+                    )
+                continue
+            }
+            if (CodeReviews.isRequest(part) && part.tool_call_id in answered) continue
             if (!Parts.isVisible(part, options.showReasoning, hideFailures)) continue
             if (
                 hidePlanTools &&

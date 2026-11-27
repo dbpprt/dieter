@@ -4,8 +4,9 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// One step: prose, an attachment, a tool call, a diagnostic that needs
-/// attention, or the message's delegated agents. Its part is resolved by the
-/// row, so an unchanged step skips rendering while its message streams.
+/// attention, the message's delegated agents, a channel message, or a code
+/// review. Its part is resolved by the row, so an unchanged step skips
+/// rendering while its message streams.
 struct TimelineStepView: View, Equatable {
     let step: ClientTimelineStep
     let part: Dieter_V1_MessagePart?
@@ -32,6 +33,8 @@ struct TimelineStepView: View, Equatable {
             if !subagents.isEmpty { SubagentTimelineGroup(agents: subagents) }
         } else if step.kind == .peerNotice {
             PeerNoticeChip(notice: step.peerNotice)
+        } else if step.kind == .codeReview {
+            if step.hasCodeReview { CodeReviewCard(review: step.codeReview) }
         } else if let part {
             switch step.kind {
             case .tool:

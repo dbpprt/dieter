@@ -40,11 +40,13 @@ type Service struct {
 
 	channels channelHub
 
-	mu               sync.Mutex
-	active           map[string]*activeTurn
-	strandedLeases   map[string]leases.RuntimeLease
-	shuttingDown     bool
-	quickTitleJobs   map[string]*quickTitleJob
+	mu             sync.Mutex
+	active         map[string]*activeTurn
+	strandedLeases map[string]leases.RuntimeLease
+	shuttingDown   bool
+	quickTitleJobs map[string]*quickTitleJob
+	// codeReviews holds each conversation's one running code review.
+	codeReviews      map[string]*codeReviewRun
 	quickTitleSlots  chan struct{}
 	minimumFreeBytes uint64
 	diskAvailable    func(string) (uint64, error)

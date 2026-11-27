@@ -540,6 +540,7 @@ internal fun RouteContent(store: MobileStore, route: MobileRoute, openUrl: (Stri
         is MobileRoute.FolderPage ->
             com.getdieter.mobile.folders.FolderPageScreen(store, route.folderId, route.page)
         is MobileRoute.FolderSync -> com.getdieter.mobile.folders.FolderSyncScreen(store)
+        is MobileRoute.CodeReviewer -> com.getdieter.mobile.settings.CodeReviewerScreen(store)
         is MobileRoute.AddFolder ->
             com.getdieter.mobile.folders.AddFolderScreen(store, route.folderId)
         is MobileRoute.SaveToFolder -> com.getdieter.mobile.share.SaveToFolderScreen(store)

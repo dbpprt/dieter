@@ -136,19 +136,37 @@ internal fun SettingsScreen(store: MobileStore) {
             }
             item("conversation") {
                 SectionHeader("Conversations")
-                ListRow(
-                    "Show reasoning",
-                    position = Position.SINGLE,
-                    subtitle = "Display the agent’s thinking between replies",
-                    glyph = Glyph.BRAIN,
-                    tile = Color(0xFFAF52DE),
-                    trailing = {
-                        DSwitch(
-                            session.show_reasoning,
-                            { store.command(Command(set_show_reasoning = SetShowReasoning(it))) },
+                Group(listOf(0, 1)) { index, position ->
+                    if (index == 0)
+                        ListRow(
+                            "Show reasoning",
+                            position = position,
+                            subtitle = "Display the agent’s thinking between replies",
+                            glyph = Glyph.BRAIN,
+                            tile = Color(0xFFAF52DE),
+                            trailing = {
+                                DSwitch(
+                                    session.show_reasoning,
+                                    {
+                                        store.command(
+                                            Command(set_show_reasoning = SetShowReasoning(it))
+                                        )
+                                    },
+                                )
+                            },
                         )
-                    },
-                )
+                    else
+                        ListRow(
+                            "Code reviewer",
+                            Modifier.testTag("settings-code-reviewer"),
+                            position = position,
+                            subtitle = "The model that checks agents’ changes when asked",
+                            glyph = Glyph.EYE,
+                            tile = Color(0xFF5E5CE6),
+                            accessory = Accessory.CHEVRON,
+                            onClick = { store.push(MobileRoute.CodeReviewer) },
+                        )
+                }
             }
             item("folder-sync") {
                 SectionHeader("Synced folders")

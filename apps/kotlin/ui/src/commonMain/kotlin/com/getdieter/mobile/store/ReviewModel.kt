@@ -92,6 +92,18 @@ internal constructor(
             )
         )
 
+    /** Shows [path]'s diff in the conversation's Changes. */
+    internal fun select(path: String) =
+        context.command(
+            Command(
+                review =
+                    ReviewCommand(
+                        scope = MobileStore.REVIEW_SCOPE,
+                        select = ReviewSelect(path = path),
+                    )
+            )
+        )
+
     internal fun bindProcesses(daemonId: String, projectId: String, cardId: String) =
         context.command(
             Command(
