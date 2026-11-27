@@ -21,9 +21,12 @@ tags: [smoke]
     element:
       text: "Personal"
     timeout: 20000
+# Centre the row: at its first visible position it sits half under the
+# floating navigation, which takes the tap.
 - scrollUntilVisible:
     element:
       id: settings-providers
+    centerElement: true
 - tapOn:
     id: settings-providers
     waitToSettleTimeoutMs: 500
