@@ -10,6 +10,30 @@ copy the **Unreleased** notes into a section named after that exact version
 
 Nothing yet.
 
+## 0.7.459
+
+### Added
+
+- **Agent memory.** Turn on **Agent memory** for a project in its settings, or
+  with `dieter project update --memory=true PROJECT`. Before investigating, its
+  agents then recall what earlier conversations of the project found, on any
+  of your machines. They also save the lessons and decisions worth keeping, and
+  saved memories reach every machine. Memory runs inside Dieter: there is
+  nothing to install, no model key, and nothing leaves your machines.
+  - New conversations follow the project. The new-conversation form and the
+    conversation menu have an **Agent memory** switch.
+  - **Dreams** keep the memories tidy. A dream is a conversation labelled
+    Memory that merges duplicates, corrects outdated memories, retires
+    contradicted ones and adds new ones in one checked batch, which you can
+    apply, discard or undo. Choose its harness, model and schedule in
+    **Settings › Agent memory** (Mac) or **Settings › Conversations › Agent
+    memory** (Android, iPhone and iPad), or run
+    `dieter memory settings update`. Start one with **Start a dream now** in
+    the project's settings.
+  - On the CLI: `dieter memory search`, `save`, `forget`, `status` and
+    `dieter memory dream …`. See
+    [Agent memory](https://getdieter.com/docs/memory/).
+
 ## 0.7.457
 
 ### Added
