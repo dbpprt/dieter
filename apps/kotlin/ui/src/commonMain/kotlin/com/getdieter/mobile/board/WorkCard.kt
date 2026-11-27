@@ -13,7 +13,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
@@ -67,24 +66,9 @@ internal fun WorkCard(
             RuntimeTone.RUNTIME_TONE_DONE -> palette.success
             else -> palette.secondaryLabel
         }
-    val railed = flags != null && flags.tone != RuntimeTone.RUNTIME_TONE_IDLE
     MenuAnchor(menu, modifier) {
         ContentCard(
             Modifier.onGloballyPositioned { bounds = it.boundsInRoot() }
-                .drawWithContent {
-                    drawContent()
-                    if (railed)
-                        drawRoundRect(
-                            tone,
-                            topLeft = androidx.compose.ui.geometry.Offset(0f, 14.dp.toPx()),
-                            size =
-                                androidx.compose.ui.geometry.Size(
-                                    3.5.dp.toPx(),
-                                    size.height - 28.dp.toPx(),
-                                ),
-                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()),
-                        )
-                }
                 .then(
                     if (drag != null)
                         Modifier.pointerInput(card.id) {

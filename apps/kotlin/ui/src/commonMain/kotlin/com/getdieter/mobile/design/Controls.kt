@@ -62,15 +62,14 @@ internal fun Modifier.pressable(
 ): Modifier {
     val interaction = remember { MutableInteractionSource() }
     if (!apple)
-        return this.then(if (scaleOnPress) Modifier.pressScale(interaction, enabled) else Modifier)
-            .combinedClickable(
-                interactionSource = interaction,
-                indication = ripple(),
-                enabled = enabled,
-                role = role,
-                onLongClick = onLongClick,
-                onClick = onClick,
-            )
+        return this.combinedClickable(
+            interactionSource = interaction,
+            indication = ripple(),
+            enabled = enabled,
+            role = role,
+            onLongClick = onLongClick,
+            onClick = onClick,
+        )
     val pressed by interaction.collectIsPressedAsState()
     val fill = palette.label.copy(alpha = if (palette.dark) .14f else .08f)
     val scale by

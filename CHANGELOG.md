@@ -8,7 +8,12 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ## Unreleased
 
-Nothing yet.
+### Changed
+
+- **Android: the redesign shipped in 0.7.454 is withdrawn.** The app looks and
+  moves as it did in 0.7.453 again: the docked transcript, the plain message
+  card, the flat two-pane layout on foldables and the earlier transitions. The
+  Inbox refresh fix and the updated dependencies of 0.7.454 stay.
 
 ## 0.7.454
 

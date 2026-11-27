@@ -683,11 +683,9 @@ private fun NavItem(
         val icon: @Composable () -> Unit = {
             Box(
                 Modifier.graphicsLayer {
-                        scaleX = magnify
-                        scaleY = magnify
-                    }
-                    // A tab that was just chosen pops; the others stay still.
-                    .popOnChange(if (selected) tab else null, from = .8f)
+                    scaleX = magnify
+                    scaleY = magnify
+                }
             ) {
                 TabIcon(tab, badge, moreOpen, tint)
             }

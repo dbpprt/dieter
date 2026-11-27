@@ -4,6 +4,7 @@ package com.getdieter.mobile.app
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -124,10 +125,8 @@ internal fun MaterialShell(store: MobileStore, openUrl: (String) -> Unit) {
         val side = floating && !immersive && (compact || (twoPane && maxWidth > maxHeight))
         val bottom = floating && !immersive && !side
         val navBars = WindowInsets.navigationBars
-        // Two panes sit as panels on a canvas that keeps the status bar clear itself.
-        val panelled = twoPane
         val base =
-            (if (panelled) WindowInsets(0, 0, 0, 0) else WindowInsets.statusBars).union(
+            WindowInsets.statusBars.union(
                 WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)
             )
         val classicBottom = if (rail || immersive) navBars else WindowInsets(0, 0, 0, 0)
@@ -185,7 +184,6 @@ internal fun MaterialShell(store: MobileStore, openUrl: (String) -> Unit) {
                             listInsets = single,
                             detailInsets = paneInsets(beneath = listHidden),
                             onListWidth = { listWidth = it },
-                            panelled = panelled,
                         )
                     }
                 }
@@ -317,7 +315,11 @@ internal fun MaterialShell(store: MobileStore, openUrl: (String) -> Unit) {
                 moreOpen = false
             }
         val modal = navigation.modal
-        AnimatedVisibility(modal != null, enter = modalEnter, exit = modalExit) {
+        AnimatedVisibility(
+            modal != null,
+            enter = slideInVertically { it / 8 } + fadeIn(tween(220)),
+            exit = slideOutVertically { it / 8 } + fadeOut(tween(180)),
+        ) {
             val shown = remember(modal) { modal } ?: return@AnimatedVisibility
             CompositionLocalProvider(
                 LocalScreenInsets provides WindowInsets.safeDrawing.exclude(WindowInsets.ime)
@@ -411,7 +413,6 @@ private fun TabStack(
     listInsets: WindowInsets,
     detailInsets: WindowInsets,
     onListWidth: (Float) -> Unit,
-    panelled: Boolean = false,
 ) {
     val holder = rememberSaveableStateHolder()
     val stack = navigation.stack
@@ -440,7 +441,6 @@ private fun TabStack(
             store,
             detailOpen = detail != null,
             onListWidth = onListWidth,
-            panelled = panelled,
             list = {
                 CompositionLocalProvider(
                     LocalBackAction provides if (listIndex > 0) store::pop else null,
@@ -459,8 +459,7 @@ private fun TabStack(
                 ) {
                     AnimatedContent(
                         detail,
-                        transitionSpec = { detailTransition() },
-                        label = "detail",
+                        transitionSpec = { fadeIn(tween(160)) togetherWith fadeOut(tween(120)) },
                     ) { shown ->
                         if (shown == null)
                             Box(
@@ -468,12 +467,7 @@ private fun TabStack(
                                 contentAlignment = Alignment.Center,
                             ) {
                                 val empty = list.emptyDetail(navigation.tab)
-                                EmptyState(
-                                    empty.glyph,
-                                    empty.title,
-                                    empty.message,
-                                    Modifier.widthIn(max = 420.dp),
-                                )
+                                EmptyState(empty.glyph, empty.title, empty.message)
                             }
                         else
                             holder.SaveableStateProvider(shown.key) {
@@ -491,11 +485,15 @@ private fun TabStack(
         targetState = navigation.tab to stack.last(),
         transitionSpec = {
             val sameTab = initialState.first == targetState.first
-            if (!sameTab) tabTransition(targetState.first.ordinal > initialState.first.ordinal)
-            else
-                pushTransition(
+            if (!sameTab) fadeIn(tween(160)) togetherWith fadeOut(tween(90))
+            else {
+                val forward =
                     depthOf(store, targetState.second) >= depthOf(store, initialState.second)
-                )
+                (slideInHorizontally(tween(300)) { if (forward) it / 6 else -it / 6 } +
+                    fadeIn(tween(220))) togetherWith
+                    (slideOutHorizontally(tween(300)) { if (forward) -it / 6 else it / 6 } +
+                        fadeOut(tween(160)))
+            }
         },
         label = "route",
     ) { (_, route) ->

@@ -123,9 +123,7 @@ internal fun ChatsScreen(store: MobileStore) {
                     if (title != null)
                         item("h-$key") { ListSectionHeader(title, count = cards.size) }
                     itemsIndexed(cards, key = { _, card -> "$key-${card.id}" }) { index, card ->
-                        Box(Modifier.animateItem(placementSpec = Motion.settle())) {
-                            ChatRow(store, card, index == 0, now, archived, selected == card.id)
-                        }
+                        ChatRow(store, card, index == 0, now, archived, selected == card.id)
                     }
                 }
                 if (archived) section("archived", null, view.archived.map { it.id })
