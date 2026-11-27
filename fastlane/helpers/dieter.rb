@@ -4,6 +4,7 @@ require "base64"
 require "digest"
 require "fileutils"
 require "json"
+require "open3"
 require "securerandom"
 require "shellwords"
 require "tmpdir"
@@ -98,9 +99,13 @@ module Dieter
 
   # --- Processes ----------------------------------------------------------------
 
+  # Runs argv and returns its stdout; a failure carries the end of its stderr.
   def capture(*argv, chdir: ROOT)
-    out = IO.popen(argv, chdir: chdir, err: File::NULL, &:read)
-    raise "#{argv.first} failed" unless $?.success?
+    out, err, status = Open3.capture3(*argv, chdir: chdir)
+    unless status.success?
+      detail = err.strip.lines.last(5).join.strip
+      raise detail.empty? ? "#{argv.first} failed" : "#{argv.first} failed: #{detail}"
+    end
     out
   end
 
