@@ -287,14 +287,7 @@ internal fun DesktopShell(store: MobileStore, openUrl: (String) -> Unit, keys: D
                         .padding(DesktopMetrics.windowInset),
             )
         }
-        AnimatedVisibility(
-            navigation.modal != null,
-            enter = fadeIn(tween(160)) + scaleIn(Motion.emphasized(), initialScale = .96f),
-            exit = fadeOut(tween(140)) + scaleOut(tween(160), targetScale = .97f),
-        ) {
-            val modal = remember(navigation.modal) { navigation.modal } ?: return@AnimatedVisibility
-            DesktopModal(store, modal, openUrl)
-        }
+        navigation.modal?.let { modal -> DesktopModal(store, modal, openUrl) }
         if (state.palette) DesktopCommandPalette(store) { state.palette = false }
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp))
     }
@@ -451,19 +444,12 @@ private fun ListDetail(
             testTag = "list-resize",
         )
         DesktopPanel(Modifier.weight(1f).fillMaxHeight().testTag("desktop-detail")) {
-            // Keyed by the conversation or route, so pane switches inside one stay in place.
-            val key = detail.conversationScope()?.first ?: detail.lastOrNull()?.key
-            AnimatedContent(
-                key,
-                transitionSpec = { detailTransition() },
-                label = "desktop-detail",
-            ) { shown ->
-                if (shown == null)
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        EmptyState(empty.glyph, empty.title, empty.message)
-                    }
-                else DetailPane(store, detail, holder, openUrl)
-            }
+            val top = detail.lastOrNull()
+            if (top == null)
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    EmptyState(empty.glyph, empty.title, empty.message)
+                }
+            else DetailPane(store, detail, holder, openUrl)
         }
     }
 }
