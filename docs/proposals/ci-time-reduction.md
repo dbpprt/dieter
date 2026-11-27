@@ -105,7 +105,7 @@ Each PR run spends about 172 macOS minutes in two concurrent slots.
 Savings are on the critical path per run. "Measured" means from the data above;
 "estimate" means extrapolated and confirmed in §6.
 
-### R1. Boot the simulator after the build — measured 36 min off every iOS job
+### R1. Boot the simulator after the build — measured 36 min off every iOS job (done in this change)
 
 In `lane :e2e`, create the simulator as now but start `bootstatus` only after
 `build_ios_simulator`. The boot (1–2.5 minutes) moves onto the critical path, and

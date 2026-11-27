@@ -96,7 +96,7 @@ is redacted from evidence.
   borrows or boots the exact emulator, installs the E2E app (skipped when the
   installed APK has the same hash), and reaches the fixture through an owned
   `adb reverse` port.
-- **iOS** creates and journals a simulator, boots it while the app builds, and
+- **iOS** creates and journals a simulator, boots it once the app is built, and
   deletes it afterwards. It defaults to Debug; pass `configuration:release`
   to exercise optimized Kotlin/Native code (as CI does), for example
   `just e2e ios flows:markdown configuration:release` for fenced-code rendering.
