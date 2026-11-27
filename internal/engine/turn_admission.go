@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"strings"
 	"time"
@@ -384,9 +385,9 @@ func withOMPAdvisorAccount(options map[string]string, accountID string) map[stri
 	if options[ompAdvisorAccountOption] == accountID {
 		return options
 	}
-	next := make(map[string]string, len(options)+1)
-	for key, value := range options {
-		next[key] = value
+	next := maps.Clone(options)
+	if next == nil {
+		next = map[string]string{}
 	}
 	if accountID == "" {
 		delete(next, ompAdvisorAccountOption)
