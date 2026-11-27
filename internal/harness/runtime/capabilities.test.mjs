@@ -833,3 +833,127 @@ test("tails appended records without replaying earlier bytes", async () => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("shows a Claude SendMessage resume as a subagent run of the current response", () => {
+  const events = [];
+  const collector = createSubagentCapabilityCollector({
+    provider: "claude-code",
+    messageId: "m-resume",
+    emit: (event) => events.push(event),
+    now: () => "2026-11-14T18:33:41Z",
+  });
+  collector.consumeUIChunk({
+    type: "tool-input-available",
+    toolCallId: "toolu_spawn",
+    toolName: "Agent",
+    input: {
+      description: "A3: Kotlin core",
+      prompt: "Implement it",
+      subagent_type: "general-purpose",
+    },
+  });
+  // Recorded Claude Code 0.3.317 Agent result envelope (abridged).
+  collector.consumeUIChunk({
+    type: "tool-output-available",
+    toolCallId: "toolu_spawn",
+    output: {
+      status: "completed",
+      agentId: "acbdace9f42500cbb",
+      content: [
+        { type: "text", text: "<tools-used-before-summary>Edit</tools-used-before-summary>\n" },
+        { type: "text", text: "The Kotlin core side is done.\nAll tests pass." },
+      ],
+      canContinueAgent: true,
+    },
+  });
+  assert.deepEqual(events.at(-1).subagent.recentOutput, [
+    "<tools-used-before-summary>Edit</tools-used-before-summary>",
+    "The Kotlin core side is done.",
+    "All tests pass.",
+  ]);
+  collector.consumeUIChunk({
+    type: "tool-input-available",
+    toolCallId: "toolu_resume",
+    toolName: "SendMessage",
+    input: {
+      to: "acbdace9f42500cbb",
+      summary: "Fix create race and add core e2e test",
+      message: "Follow-up for A3: fix the race.",
+    },
+  });
+  assert.deepEqual(events.at(-1).subagent, {
+    id: "toolu_resume",
+    provider: "claude-code",
+    messageId: "m-resume",
+    status: "running",
+    startedAt: "2026-11-14T18:33:41Z",
+    parentToolCallId: "toolu_resume",
+    name: "Fix create race and add core e2e test",
+    agentType: "general-purpose",
+    description: "Resumes A3: Kotlin core",
+    task: "Follow-up for A3: fix the race.",
+    updatedAt: "2026-11-14T18:33:41Z",
+  });
+  collector.consumeUIChunk({
+    type: "tool-output-available",
+    toolCallId: "toolu_resume",
+    output: {
+      success: true,
+      message: "Resumed agent. Its final report is not in this message.",
+      inlineHandback: {
+        displayName: "acbdace",
+        content: [{ type: "text", text: "Both items are done and all three checks pass." }],
+      },
+    },
+  });
+  assert.equal(events.at(-1).subagent.id, "toolu_resume");
+  assert.equal(events.at(-1).subagent.status, "completed");
+  assert.deepEqual(events.at(-1).subagent.recentOutput, [
+    "Both items are done and all three checks pass.",
+  ]);
+});
+
+test("names a resume of an earlier turn's agent from the call and ignores peer messages", () => {
+  const events = [];
+  const collector = createSubagentCapabilityCollector({
+    provider: "claude-code",
+    messageId: "m-later",
+    emit: (event) => events.push(event),
+    now: () => "2026-11-13T15:36:18Z",
+  });
+  for (const [toolCallId, to] of [
+    ["toolu_peer_socket", "uds:/tmp/cc-socks/29789.sock"],
+    ["toolu_peer_session", "c-7914d506f670088a1dc395f1-ec"],
+    ["toolu_teammate", "dieter-52"],
+  ]) {
+    collector.consumeUIChunk({
+      type: "tool-input-available",
+      toolCallId,
+      toolName: "SendMessage",
+      input: { to, summary: "Seam note", message: "Agreed." },
+    });
+    collector.consumeUIChunk({
+      type: "tool-output-available",
+      toolCallId,
+      output: { success: true },
+    });
+  }
+  assert.equal(events.length, 0);
+
+  collector.consumeUIChunk({
+    type: "tool-input-available",
+    toolCallId: "toolu_cross_turn",
+    toolName: "SendMessage",
+    input: { to: "a2cb21b20b3b80d9b", summary: "Wire remote folder browse", message: "Lead here." },
+  });
+  assert.equal(events.at(-1).subagent.name, "Wire remote folder browse");
+  assert.equal(events.at(-1).subagent.agentType, "Agent");
+  assert.equal(events.at(-1).subagent.description, "Resumes agent a2cb21b20b3b80d9b");
+  collector.consumeUIChunk({
+    type: "tool-output-error",
+    toolCallId: "toolu_cross_turn",
+    errorText: "Agent a2cb21b20b3b80d9b is no longer available",
+  });
+  assert.equal(events.at(-1).subagent.status, "failed");
+  assert.equal(events.at(-1).subagent.error, "Agent a2cb21b20b3b80d9b is no longer available");
+});

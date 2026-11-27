@@ -8,6 +8,7 @@ import {
   createClaudeTurnSummary,
   emptyClaudeResumePrompt,
   isCompletelyEmptyClaudeTurn,
+  needsClaudeDelegationFollowUp,
   observeClaudeTurnChunk,
   retryClaudeAuthFailure,
   retryEmptyClaudeResume,
@@ -180,4 +181,41 @@ test("the final authentication message leads with the action and keeps the provi
   const [first, second] = claudeAuthFailureMessage("HTTP 401: authentication_failed").split("\n");
   assert.match(first, /Settings › Providers/);
   assert.equal(second, "HTTP 401: authentication_failed");
+});
+
+test("does not prompt a delegating Claude turn that waits for a host answer", () => {
+  // Recorded failure: a turn ran Agent calls, then asked AskUserQuestion with
+  // no prose. The follow-up prompt hit the paused session and failed the turn
+  // with "has an unfinished turn and must be continued".
+  const paused = createClaudeTurnSummary();
+  observeClaudeTurnChunk(paused, {
+    type: "tool-input-available",
+    toolCallId: "toolu_question",
+    toolName: "askUserQuestions",
+    input: { questions: [] },
+  });
+  observeClaudeTurnChunk(paused, { type: "finish", finishReason: "tool-calls" });
+  assert.equal(paused.awaitingHostInput, true);
+  const decision = (summary) =>
+    needsClaudeDelegationFollowUp({
+      adapter: "claude-code",
+      delegationSeen: true,
+      finalTextSeen: false,
+      aborted: false,
+      summary,
+    });
+  assert.equal(decision(paused), false);
+
+  const finished = createClaudeTurnSummary();
+  observeClaudeTurnChunk(finished, { type: "finish", finishReason: "stop" });
+  assert.equal(finished.awaitingHostInput, false);
+  assert.equal(decision(finished), true);
+
+  for (const blocked of [
+    { adapter: "codex", delegationSeen: true, finalTextSeen: false, aborted: false },
+    { adapter: "claude-code", delegationSeen: false, finalTextSeen: false, aborted: false },
+    { adapter: "claude-code", delegationSeen: true, finalTextSeen: true, aborted: false },
+    { adapter: "claude-code", delegationSeen: true, finalTextSeen: false, aborted: true },
+  ])
+    assert.equal(needsClaudeDelegationFollowUp({ ...blocked, summary: finished }), false);
 });

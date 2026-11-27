@@ -11,7 +11,7 @@ function totalTokens(chunk) {
 }
 
 export function createClaudeTurnSummary() {
-  return { meaningful: false, totalTokens: undefined };
+  return { meaningful: false, totalTokens: undefined, awaitingHostInput: false };
 }
 
 export function observeClaudeTurnChunk(summary, chunk) {
@@ -31,9 +31,35 @@ export function observeClaudeTurnChunk(summary, chunk) {
     case "tool-approval-request":
       meaningful = true;
       break;
+    case "finish":
+      // HarnessAgent ends a response that waits for a host answer (a question
+      // or an approval) with finishReason "tool-calls". The session then holds
+      // an unfinished turn and rejects any new prompt until it is continued.
+      summary.awaitingHostInput = chunk.finishReason === "tool-calls";
+      break;
   }
   if (meaningful) summary.meaningful = true;
   return meaningful;
+}
+
+// Claude Agent SDK 0.3.213 can end a provider-executed Agent step after
+// returning the child result without streaming the parent's final prose; the
+// runner then continues the same durable session once. Not when the response
+// is waiting for a host answer: that session cannot take a prompt.
+export function needsClaudeDelegationFollowUp({
+  adapter,
+  delegationSeen,
+  finalTextSeen,
+  aborted,
+  summary,
+}) {
+  return (
+    adapter === "claude-code" &&
+    delegationSeen &&
+    !finalTextSeen &&
+    !aborted &&
+    summary?.awaitingHostInput !== true
+  );
 }
 
 export function isCompletelyEmptyClaudeTurn(summary) {

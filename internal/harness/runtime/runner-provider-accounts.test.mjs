@@ -106,7 +106,9 @@ const replacements = ${JSON.stringify({
   ai: dataURL(
     "export const tool = value => value; export const toUIMessageStream = ({stream}) => stream;",
   ),
-  "./claude-runtime.mjs": dataURL(factory("createLocalClaudeCode", "claude-code")),
+  "./claude-runtime.mjs": dataURL(
+    `${factory("createLocalClaudeCode", "claude-code")}export const claudeInactiveBuiltinTools = () => [];\n`,
+  ),
   "./codex-runtime.mjs": dataURL(factory("createLocalCodex", "codex")),
 })};
 registerHooks({resolve(specifier, context, next) {
