@@ -8,12 +8,24 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.7.455
+
 ### Changed
 
 - **Android: the redesign shipped in 0.7.454 is withdrawn.** The app looks and
   moves as it did in 0.7.453 again: the docked transcript, the plain message
   card, the flat two-pane layout on foldables and the earlier transitions. The
   Inbox refresh fix and the updated dependencies of 0.7.454 stay.
+
+### Fixed
+
+- **Claude turns no longer strand on questions or background waits.** Claude
+  sessions no longer get the question, monitor, scheduling and workflow tools
+  Dieter cannot answer or keep alive, so an agent asks in its reply and waits
+  in the foreground instead of pausing the turn or ending the chat. A Claude
+  subagent that is resumed shows up as a subagent again.
 
 ## 0.7.454
 
