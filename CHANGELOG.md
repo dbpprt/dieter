@@ -10,6 +10,30 @@ copy the **Unreleased** notes into a section named after that exact version
 
 Nothing yet.
 
+## 0.7.456
+
+### Added
+
+- **A code reviewer for your agents.** Choose a reviewer once for your
+  account: a harness, model and depth in **Settings › Code reviewer**, or with
+  `dieter reviewer update`. Then switch on **Code review** when you create a
+  task, chat or schedule, or later in the conversation. When its change is
+  complete, the agent asks this second model for a review, fixes the findings
+  it agrees with and explains the ones it rejects.
+  - Each review appears in the conversation. Findings come with severity,
+    file and lines (open the diff in Changes) and a suggested fix.
+  - A second review marks findings resolved, still open or new.
+  - Choose **Review changes** in Changes, or run `dieter card review CARD --wait`,
+    to start one yourself.
+  - Reviews run on your machine, on your provider accounts, on a disposable
+    snapshot of the workspace that the agent's work never touches. See
+    [Code review](https://getdieter.com/docs/code-review/).
+
+### Changed
+
+- **The Mac and iOS apps are built with Xcode 27.2** and link the iOS and macOS
+  27.2 SDKs. Supported systems are unchanged: iOS 18 and macOS 26 or later.
+
 ## 0.7.455
 
 ### Changed
