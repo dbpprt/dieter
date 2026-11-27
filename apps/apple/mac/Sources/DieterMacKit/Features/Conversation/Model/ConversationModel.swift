@@ -307,6 +307,32 @@ final class ConversationModel {
         try await core.dispatch { $0.codeReview.start = .with { $0.cardID = cardID } }
     }
 
+    /// Switches the shown conversation's agent memory; the agent recalls and
+    /// saves memories (or stops) from its next turn.
+    func setMemory(enabled: Bool) async throws {
+        guard let core, let cardID = observedCardID else { return }
+        try await core.dispatch {
+            $0.memory.setEnabled = .with {
+                $0.cardID = cardID
+                $0.enabled = enabled
+            }
+        }
+    }
+
+    /// Applies, discards or undoes the shown dream conversation's dream; its
+    /// banner shows the result.
+    func reviewDream(_ action: MemoryDreamAction) async throws {
+        guard let core, let cardID = observedCardID else { return }
+        let dream = ClientMemoryCardRef.with { $0.cardID = cardID }
+        try await core.dispatch {
+            switch action {
+            case .apply: $0.memory.applyDream = dream
+            case .discard: $0.memory.discardDream = dream
+            case .undo: $0.memory.undoDream = dream
+            }
+        }
+    }
+
     func returnToLatest() {
         guard let core, let cardID = observedCardID else { return }
         Task { _ = try? await core.dispatch { $0.returnToLatest = .with { $0.cardID = cardID } } }
@@ -398,6 +424,9 @@ struct ConversationChrome: Equatable, Sendable {
     /// nil until its card is known. The latest review is left out: it shows
     /// in the transcript.
     var codeReview: ClientConversationCodeReview?
+    /// The conversation's agent memory switch and, for a dream conversation,
+    /// its dream as the core lays it out; nil until its card is known.
+    var memory: ClientConversationMemory?
 
     init() {}
 
@@ -414,6 +443,12 @@ struct ConversationChrome: Equatable, Sendable {
             var review = state.codeReview
             review.clearLatest()
             codeReview = review
+        }
+        if state.hasMemory {
+            var memory = state.memory
+            // The banner shows the core's layout, not the machine's record.
+            if memory.hasDream { memory.dream.clearDream() }
+            self.memory = memory
         }
     }
 }

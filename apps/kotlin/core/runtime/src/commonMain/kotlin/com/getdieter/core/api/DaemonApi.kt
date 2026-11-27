@@ -21,6 +21,7 @@ import com.getdieter.api.v1.GrpcGitServiceClient
 import com.getdieter.api.v1.GrpcKVServiceClient
 import com.getdieter.api.v1.GrpcMachineServiceClient
 import com.getdieter.api.v1.GrpcMailServiceClient
+import com.getdieter.api.v1.GrpcMemoryServiceClient
 import com.getdieter.api.v1.GrpcPeerServiceClient
 import com.getdieter.api.v1.GrpcProjectServiceClient
 import com.getdieter.api.v1.GrpcProviderAccountServiceClient
@@ -35,6 +36,7 @@ import com.getdieter.api.v1.GrpcVaultServiceClient
 import com.getdieter.api.v1.KVServiceClient
 import com.getdieter.api.v1.MachineServiceClient
 import com.getdieter.api.v1.MailServiceClient
+import com.getdieter.api.v1.MemoryServiceClient
 import com.getdieter.api.v1.PeerServiceClient
 import com.getdieter.api.v1.ProjectServiceClient
 import com.getdieter.api.v1.ProviderAccountServiceClient
@@ -75,7 +77,8 @@ interface DaemonApi :
     MailServiceClient,
     FolderServiceClient,
     ProviderAccountServiceClient,
-    ReviewServiceClient
+    ReviewServiceClient,
+    MemoryServiceClient
 
 /** [DaemonApi] over Wire's generated clients, all sharing [client]'s channel. */
 class GrpcDaemonApi(client: GrpcClient) :
@@ -102,4 +105,5 @@ class GrpcDaemonApi(client: GrpcClient) :
     MailServiceClient by GrpcMailServiceClient(client),
     FolderServiceClient by GrpcFolderServiceClient(client),
     ProviderAccountServiceClient by GrpcProviderAccountServiceClient(client),
-    ReviewServiceClient by GrpcReviewServiceClient(client)
+    ReviewServiceClient by GrpcReviewServiceClient(client),
+    MemoryServiceClient by GrpcMemoryServiceClient(client)

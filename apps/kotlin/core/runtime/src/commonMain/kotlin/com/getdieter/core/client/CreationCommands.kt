@@ -135,6 +135,7 @@ internal fun CoreRuntime.creationInput(intent: CreationIntent, chat: Boolean): C
         vaultAccess = intent.vault_access,
         mailAccess = intent.mail_access,
         codeReview = intent.code_review,
+        memory = Creation.memory(project, intent.memory),
     )
 }
 
@@ -179,6 +180,7 @@ internal fun creationIntent(input: CreationInput): CreationIntent =
         vault_access = input.vaultAccess,
         mail_access = input.mailAccess,
         code_review = input.codeReview,
+        memory = Creation.memory(input.project, input.memory),
     )
 
 /**
@@ -271,6 +273,7 @@ internal fun creationPreview(plan: CreationPlan): CreationPreview {
             ),
         daemon_id = plan.daemonId.orEmpty(),
         workspace_detail = input.workspaceMode.detail,
+        memory_available = input.project.memory_enabled,
     )
 }
 

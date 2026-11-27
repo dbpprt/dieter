@@ -1,0 +1,302 @@
+{
+  "date": "2026-11-27",
+  "machine": "Apple Silicon, macOS 27",
+  "agentmemory": "0.9.33 (npm, 2026-11-18)",
+  "iii": "0.25.1; workers state 0.22.22, http 0.22.8",
+  "install": {
+    "fullNodeModulesMB": 957,
+    "omitOptionalNodeModulesMB": 98,
+    "iiiBinaryMB": 26,
+    "workerPackagesMB": 23,
+    "npmInstallSeconds": 6.6
+  },
+  "runtime": {
+    "processes": 6,
+    "detachedFromLauncher": true,
+    "listeners": {
+      "rest": "127.0.0.1 (iii http worker)",
+      "viewer": "127.0.0.1 (node)",
+      "engine": "127.0.0.1 ws"
+    },
+    "firstStartDownloads": [
+      "github.com iii 0.25.1 (sha256 pinned)",
+      "api.workers.iii.dev state + http worker binaries"
+    ],
+    "coldStartSeconds": "~6 to live (first start, incl. downloads)",
+    "rssMB": {
+      "keyless_after_24k_obs": 276,
+      "local_embeddings_after_24k_obs": 634
+    },
+    "diskMB": {
+      "keyless_24k_obs": 106,
+      "local_embeddings_24k_obs": 154
+    },
+    "homeWrites": "~/.agentmemory (bin, .env, preferences, engine state, compose log) and ~/Library/Application Support/agentmemory regardless of --data-dir; 24 hard-coded homedir() paths, no override"
+  },
+  "restProbe": {
+    "unauthenticatedHealth": 401,
+    "livez": 200,
+    "sessionStart": {
+      "status": 200,
+      "contextChars": 0
+    },
+    "observe": [
+      {
+        "hookType": "prompt_submit",
+        "status": 201,
+        "state": "accepted"
+      },
+      {
+        "hookType": "post_tool_use",
+        "status": 201,
+        "state": "accepted"
+      },
+      {
+        "hookType": "post_tool_use",
+        "status": 201,
+        "state": "accepted"
+      },
+      {
+        "hookType": "post_tool_failure",
+        "status": 201,
+        "state": "accepted"
+      },
+      {
+        "hookType": "stop",
+        "status": 201,
+        "state": "accepted"
+      }
+    ],
+    "duplicateReplay": {
+      "status": 200,
+      "state": "duplicate"
+    },
+    "sessionEnd": 200,
+    "remember": {
+      "status": 201,
+      "keys": ["memory", "success"]
+    },
+    "search": [
+      {
+        "query": "transcript scroll jumps",
+        "status": 200,
+        "ms": 7,
+        "hits": 4,
+        "resultKeys": ["lessons", "mode", "results"]
+      },
+      {
+        "query": "TranscriptScrollController",
+        "status": 200,
+        "ms": 4,
+        "hits": 2,
+        "resultKeys": ["lessons", "mode", "results"]
+      },
+      {
+        "query": "why do mac e2e flows fail",
+        "status": 200,
+        "ms": 4,
+        "hits": 4,
+        "resultKeys": ["lessons", "mode", "results"]
+      },
+      {
+        "query": "scrolling glitch in chat window",
+        "status": 200,
+        "ms": 3,
+        "hits": 3,
+        "resultKeys": ["lessons", "mode", "results"]
+      }
+    ],
+    "otherProjectHits": 0,
+    "context": {
+      "status": 200,
+      "ms": 4,
+      "chars": 908
+    },
+    "sessions": {
+      "status": 200,
+      "count": 1
+    }
+  },
+  "captureLimits": {
+    "run": "45 cards with default MAX_OBS_PER_SESSION=500",
+    "observationsSent": 24276,
+    "accepted": 9735,
+    "refused": 14541,
+    "finding": "over-cap observations become dead letters; dead letters count toward the 10,000 capture inbox and are pruned only hourly or at boot, so after ~10k refusals every session's capture got HTTP 503 'capture inbox is full'"
+  },
+  "replayUncapped": {
+    "cards": 45,
+    "harnesses": ["codex", "claude-code", "omp"],
+    "observations": 24276,
+    "accepted": 24276,
+    "duplicate": 0,
+    "other": 0,
+    "ms": 482312,
+    "msPerObservation": 19.87,
+    "note": "ms/observation measured while a second instance ingested concurrently; 5.07 ms alone"
+  },
+  "resumeIdempotency": "re-sending a partially ingested card returned 217 duplicates and 0 double writes",
+  "recallEval": {
+    "cases": 18,
+    "method": "paraphrased problem statements; expected = card where the work happened; hit by agentmemory session (= Dieter card)",
+    "keyless_capped_31_cards_ingested": {
+      "label": "bm25-capped500-31cards",
+      "cases": 18,
+      "hitAt1": 9,
+      "hitAt3": 11,
+      "hitAt5": 11,
+      "mrr": 0.556,
+      "p50ms": 13,
+      "maxMs": 208
+    },
+    "keyless_bm25_all_cards": {
+      "label": "bm25-uncapped-45cards",
+      "cases": 18,
+      "hitAt1": 14,
+      "hitAt3": 18,
+      "hitAt5": 18,
+      "mrr": 0.889,
+      "p50ms": 20,
+      "maxMs": 64
+    },
+    "local_minilm_hybrid": {
+      "label": "hybrid-local-minilm-44cards",
+      "cases": 18,
+      "hitAt1": 17,
+      "hitAt3": 17,
+      "hitAt5": 17,
+      "mrr": 0.944,
+      "p50ms": 40,
+      "maxMs": 94
+    },
+    "rows": [
+      {
+        "query": "Mac stays disconnected after waking from sleep",
+        "bm25Rank": 1,
+        "hybridRank": 1
+      },
+      {
+        "query": "card snaps back to its old lane after dragging until sync finishes",
+        "bm25Rank": 1,
+        "hybridRank": 1
+      },
+      {
+        "query": "typing lag and lost characters in the Android chat composer",
+        "bm25Rank": 2,
+        "hybridRank": null
+      },
+      {
+        "query": "make the gateway unable to read relayed traffic",
+        "bm25Rank": 1,
+        "hybridRank": 1
+      },
+      {
+        "query": "store passwords and one-time codes that agents can request",
+        "bm25Rank": 2,
+        "hybridRank": 1
+      },
+      {
+        "query": "conversation fails but works again when I send another message",
+        "bm25Rank": 1,
+        "hybridRank": 1
+      },
+      {
+        "query": "screen share should reconnect instead of opening new connections on a flaky network",
+        "bm25Rank": 1,
+        "hybridRank": 1
+      },
+      {
+        "query": "presented file opens again every time I return to the chat",
+        "bm25Rank": 1,
+        "hybridRank": 1
+      },
+      {
+        "query": "notch covers the status badges in the top bar",
+        "bm25Rank": 2,
+        "hybridRank": 1
+      },
+      {
+        "query": "background waiters never come back in Claude and Oh My Pi",
+        "bm25Rank": 1,
+        "hybridRank": 1
+      },
+      {
+        "query": "quick task text disappears when opening more options on Android",
+        "bm25Rank": 1,
+        "hybridRank": 1
+      },
+      {
+        "query": "do workflow runs or the repository leak credentials",
+        "bm25Rank": 1,
+        "hybridRank": 1
+      },
+      {
+        "query": "deploy the gateway from the main repository instead of the vps repo",
+        "bm25Rank": 1,
+        "hybridRank": 1
+      },
+      {
+        "query": "high CPU usage and slow clicks in the native Mac app",
+        "bm25Rank": 1,
+        "hybridRank": 1
+      },
+      {
+        "query": "move business rules into one shared Kotlin multiplatform layer",
+        "bm25Rank": 1,
+        "hybridRank": 1
+      },
+      {
+        "query": "right click to delete a board on macOS",
+        "bm25Rank": 1,
+        "hybridRank": 1
+      },
+      {
+        "query": "why are builds and emulator tests so slow",
+        "bm25Rank": 2,
+        "hybridRank": 1
+      },
+      {
+        "query": "remove board comments from the daemon and every client",
+        "bm25Rank": 1,
+        "hybridRank": 1
+      }
+    ]
+  },
+  "secretScrubbing": "fake GitHub, AWS, Anthropic keys, URL credentials and <private> tags were redacted in API output and absent from state_store.db",
+  "contextInjection": "keyless /context returns the most recent session's raw snippets (recency, not relevance; HTML-escaped), 1.8 kB at budget 600, 5.6 kB at budget 2000",
+  "liveTurns": {
+    "claude-code": {
+      "model": "sonnet",
+      "effort": "low",
+      "project": "empty git dir (memory is the only source)",
+      "prompt": "natural question, no mention of memory",
+      "toolSequence": ["ToolSearch", "memory_recall", "bash", "bash"],
+      "memoryRecallMs": [40],
+      "wallSeconds": 14.8,
+      "usage": {
+        "inputTokens": 111700,
+        "outputTokens": 1006
+      },
+      "outcome": "correct cause and fix (PR #144) from the recalled card; followed the card id with `dieter card transcript`; noted the PR as unmerged because the source transcript ended before the merge (staleness)"
+    },
+    "codex": {
+      "outcome": "not run: the default ~/.codex login's refresh returned 401; not retried (Dieter owns Codex refresh through provider accounts)"
+    }
+  },
+  "mcpPassthrough": {
+    "tools": 48,
+    "definitionBytes": 23626,
+    "approxTokens": 5907,
+    "AGENTMEMORY_TOOLS_on_shim": "no effect (server-side flag)",
+    "includes": [
+      "memory_governance_delete",
+      "memory_export",
+      "memory_team_share",
+      "memory_mesh_sync"
+    ]
+  },
+  "hostTools": {
+    "tools": 2,
+    "approxTokens": 250
+  }
+}

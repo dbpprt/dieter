@@ -122,6 +122,9 @@
             case takeScreenshot(String)
             case pressKey(Key)
             case scroll
+            /// Wheel the frontmost window (a sheet when one is open) until the
+            /// element is visible; up scrolls towards the top.
+            case scrollUntilVisible(ElementSelector, up: Bool, center: Bool, timeout: TimeInterval)
         }
 
         struct Step {
@@ -240,6 +243,20 @@
             case "scroll":
                 guard argument as? Bool == true else { throw Failure("scroll takes no options on macOS") }
                 command = .scroll
+            case "scrollUntilVisible":
+                let fields = try options(["element", "direction", "timeout", "centerElement"])
+                guard let element = fields["element"] else { throw Failure("scrollUntilVisible needs an element") }
+                let direction = (fields["direction"] as? String)?.uppercased() ?? "DOWN"
+                guard ["DOWN", "UP"].contains(direction) else {
+                    throw Failure("scrollUntilVisible scrolls DOWN or UP on macOS")
+                }
+                let timeout = fields["timeout"] as? Int ?? 20_000
+                guard (1...300_000).contains(timeout) else {
+                    throw Failure("scrollUntilVisible needs a timeout of 1…300000 ms")
+                }
+                command = .scrollUntilVisible(
+                    try ElementSelector(element), up: direction == "UP",
+                    center: fields["centerElement"] as? Bool ?? false, timeout: Double(timeout) / 1_000)
             default:
                 throw Failure("Unsupported Maestro command \(name) on macOS")
             }
@@ -300,6 +317,24 @@
                 else { throw Failure("Native scroll event unavailable") }
                 let point = NSPoint(x: content.bounds.midX, y: content.bounds.midY)
                 content.hitTest(point)?.scrollWheel(with: event)
+            case .scrollUntilVisible(let selector, let up, let center, let timeout):
+                let deadline = Date().addingTimeInterval(timeout)
+                while selector.resolve(in: window) == nil {
+                    guard Date() < deadline else { throw Failure("No visible after scrolling: \(selector)") }
+                    // Sheets are key while open; small steps keep the target
+                    // from scrolling past the visible area.
+                    try wheel(up ? 240 : -240, in: NSApp.keyWindow ?? window)
+                    try await Task.sleep(nanoseconds: 300_000_000)
+                }
+                // centerElement: what follows the element shows too.
+                if center, let element = selector.resolve(in: window) {
+                    let host = element.window
+                    let offset = host.frame.midY - element.frame.midY
+                    if abs(offset) > 40 {
+                        try wheel(Int32(-offset), in: host)
+                        try await Task.sleep(nanoseconds: 300_000_000)
+                    }
+                }
             case .pressKey(let key):
                 let target = NSApp.keyWindow ?? window
                 for type in [NSEvent.EventType.keyDown, .keyUp] {
@@ -379,6 +414,18 @@
                 return
             }
             try click(element)
+        }
+
+        /// One pixel wheel event at the window's centre; negative scrolls down.
+        private static func wheel(_ amount: Int32, in host: NSWindow) throws {
+            guard let content = host.contentView,
+                let wheel = CGEvent(
+                    scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1,
+                    wheel1: amount, wheel2: 0, wheel3: 0),
+                let event = NSEvent(cgEvent: wheel)
+            else { throw Failure("Native scroll event unavailable") }
+            let point = NSPoint(x: content.bounds.midX, y: content.bounds.midY)
+            content.hitTest(point)?.scrollWheel(with: event)
         }
 
         private static func click(_ element: NativeUIAccessibility.Element) throws {

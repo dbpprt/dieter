@@ -93,6 +93,33 @@ class AccountViewTest {
     }
 
     @Test
+    fun projectMemoryDefaultsOffAndFollowsTheReplicatedSwitch() {
+        assertFalse(
+            TestRecords.project(replica("studio", base))
+                .directory
+                .projects
+                .getValue("p")
+                .memory_enabled
+        )
+        val on = field("project", "p", "memoryEnabled", "true")
+        assertTrue(
+            TestRecords.project(replica("studio", base + on))
+                .directory
+                .projects
+                .getValue("p")
+                .memory_enabled
+        )
+        val off = record("project/p.memoryEnabled", version("false", "a" to 2L))
+        assertFalse(
+            TestRecords.project(replica("studio", base + on), replica("laptop", listOf(off)))
+                .directory
+                .projects
+                .getValue("p")
+                .memory_enabled
+        )
+    }
+
+    @Test
     fun anArchiveAnywhereWinsAndHidesTheItem() {
         val card = item("c", "p", "co", owner = "studio", boardId = "b")
         val archived = record("item/c.archived", version("true", "laptop" to 1L))
@@ -179,6 +206,8 @@ class AccountViewTest {
                 updated_at = "2026-10-01T11:00:00Z",
                 vault_access = true,
                 mail_access = true,
+                memory = true,
+                memory_role = "dreamer",
             )
         val activity =
             Conversation(
@@ -212,6 +241,8 @@ class AccountViewTest {
         assertEquals("Doing it", shown.summary)
         assertEquals("2026-10-01T11:00:00Z", shown.updated_at)
         assertTrue(shown.vault_access && shown.mail_access, "the owner's capabilities")
+        assertTrue(shown.memory, "the owner's memory switch")
+        assertEquals("dreamer", shown.memory_role)
         assertEquals(listOf("s1"), shown.active_subagents.map { it.id })
         assertEquals(activity, view.activities["c"])
         assertEquals("/work/atlas", view.projects.getValue("p").checkouts.single().path)
@@ -226,6 +257,8 @@ class AccountViewTest {
         val shared = TestRecords.project(laptop).directory.item("c")!!
         assertEquals("", shared.initial_prompt)
         assertFalse(shared.mail_access)
+        assertFalse(shared.memory)
+        assertEquals("", shared.memory_role)
         assertTrue(shared.active_subagents.isEmpty())
     }
 

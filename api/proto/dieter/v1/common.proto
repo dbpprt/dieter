@@ -53,6 +53,10 @@ message Checkout {
 message Project {
   // Opt-in archive cleanup retains branches and history; ignored files are deleted.
   bool delete_worktrees_on_archive = 20;
+  // Agent memory: finished turns of this project's memory-enabled
+  // conversations are indexed and their agents recall and save memories
+  // (MemoryService). New conversations take it as their default.
+  bool memory_enabled = 21;
  repeated Checkout checkouts = 18;
  repeated string conflict_keys = 19;
   reserved 13;
@@ -204,6 +208,12 @@ message Card {
   // Agent turns get Dieter's code reviewer (ReviewService): owner-local,
   // switchable at any time, effective from the next turn.
   bool code_review = 50;
+  // Agent memory (MemoryService): owner-local, switchable at any time,
+  // effective from the next turn; only while the project has memory on.
+  bool memory = 51;
+  // "dreamer" for a dream conversation (fixed at creation by Dieter): its
+  // agent may change the project's saved memories with memory_apply.
+  string memory_role = 52;
 }
 
 message CardOrigin {

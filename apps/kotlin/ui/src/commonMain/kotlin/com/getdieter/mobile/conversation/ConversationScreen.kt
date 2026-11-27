@@ -142,23 +142,36 @@ private fun conversationMenu(
             }
         )
     }
-    // The agent's reviewer applies from its next turn.
+    // The agent's reviewer and memory apply from its next turn; a dream always has memory.
     val reviewer =
         view.state?.code_review?.let {
-            MenuSection(
-                listOf(
-                    ChromeAction(
-                        "code-review-switch",
-                        "Code review",
-                        Glyph.EYE,
-                        enabled = it.can_toggle,
-                        checked = it.enabled,
-                    ) {
-                        store.conversation.setCodeReview(!it.enabled)
-                    }
-                )
-            )
+            ChromeAction(
+                "code-review-switch",
+                "Code review",
+                Glyph.EYE,
+                enabled = it.can_toggle,
+                checked = it.enabled,
+            ) {
+                store.conversation.setCodeReview(!it.enabled)
+            }
         }
+    val memory =
+        view.state
+            ?.memory
+            ?.takeIf { it.shown }
+            ?.let {
+                ChromeAction(
+                    "memory-switch",
+                    "Agent memory",
+                    Glyph.HISTORY,
+                    enabled = it.can_toggle,
+                    checked = it.enabled,
+                ) {
+                    store.conversation.setMemory(!it.enabled)
+                }
+            }
+    val capabilities =
+        listOfNotNull(reviewer, memory).takeIf { it.isNotEmpty() }?.let { MenuSection(it) }
     val organize =
         card
             ?.let {
@@ -169,7 +182,7 @@ private fun conversationMenu(
                 ) + cardMenuSections(store, it).drop(1)
             }
             .orEmpty()
-    return listOfNotNull(MenuSection(panes), MenuSection(agent), reviewer) + organize
+    return listOfNotNull(MenuSection(panes), MenuSection(agent), capabilities) + organize
 }
 
 @Composable
@@ -499,6 +512,11 @@ private fun Transcript(
                             secondaryLabel = if (choose) null else "Choose account",
                             onSecondary = if (choose) null else ({ agentSheet = true }),
                         )
+                    }
+                }
+                state?.memory?.dream?.let { dream ->
+                    item("memory-dream") {
+                        MemoryDreamBanner(store, dream, Modifier.padding(horizontal = ScreenMargin))
                     }
                 }
                 view.turn_failure?.let { failure ->

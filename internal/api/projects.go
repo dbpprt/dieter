@@ -113,6 +113,11 @@ func (api *projectsAPI) UpdateProject(_ context.Context, request *dieterv1.Updat
 	if err != nil {
 		return nil, err
 	}
+	if request.MemoryEnabled != nil {
+		if value, err = api.server.store.Kanban.SetProjectMemory(value.ID, request.GetMemoryEnabled()); err != nil {
+			return nil, err
+		}
+	}
 	return protoProject(value), nil
 }
 

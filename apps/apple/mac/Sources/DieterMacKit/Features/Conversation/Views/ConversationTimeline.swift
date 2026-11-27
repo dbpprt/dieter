@@ -175,6 +175,10 @@ struct ConversationTimeline: View {
                     )
                     .id("conversation.agent-working")
                 }
+                if let memory = context.memory, memory.hasDream {
+                    MemoryDreamBanner(dream: memory.dream) { action in await context.reviewDream(action) }
+                        .id("conversation.memory-dream")
+                }
                 if let creationFailure {
                     CreationFailureBanner(
                         failure: creationFailure,

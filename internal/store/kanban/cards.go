@@ -28,7 +28,8 @@ type CreateCardInput struct {
 	LabelIDs                                                         []string
 	ProviderOptions                                                  map[string]string
 	Origin                                                           *model.CardOrigin
-	VaultAccess, MailAccess, CodeReview                              bool
+	VaultAccess, MailAccess, CodeReview, Memory                      bool
+	MemoryRole                                                       string
 	// ProviderAccountID is the account the first turn runs on; it stays the
 	// conversation's account until a turn chooses another.
 	ProviderAccountID string
@@ -138,7 +139,7 @@ func (s *Store) CreateCard(input CreateCardInput) (model.Card, error) {
 		return model.Card{}, err
 	}
 	now := home.Timestamp()
-	item := model.Card{ID: input.ID, OwnerDaemonID: checkout.DaemonID, CheckoutID: checkout.ID, Scope: model.ConversationScopeBoard, ProjectID: project.ID, BoardID: board.ID, Lane: canonicalLane(board, lane), Position: int64(len(existing)+1) * 1024, Title: strings.TrimSpace(input.Title), InitialPrompt: strings.TrimSpace(input.Prompt), Provider: input.Provider, Model: input.Model, Effort: input.Effort, ProviderOptions: home.CloneStringMap(input.ProviderOptions), Runtime: "idle", RuntimeUpdatedAt: now, LastActivityAt: now, PhaseChangedAt: now, CreatedAt: now, UpdatedAt: now, LabelIDs: labelIDs, Origin: input.Origin, WorkspaceMode: workspaceMode, WorkspaceBranch: strings.TrimSpace(input.WorkspaceBranch), WorkspaceBaseBranch: strings.TrimSpace(input.WorkspaceBaseBranch), WorkspaceBaseRemote: baseRemote, RemotePublishMode: remotePublishMode, VaultAccess: input.VaultAccess, MailAccess: input.MailAccess, CodeReview: input.CodeReview, ProviderAccountID: strings.TrimSpace(input.ProviderAccountID)}
+	item := model.Card{ID: input.ID, OwnerDaemonID: checkout.DaemonID, CheckoutID: checkout.ID, Scope: model.ConversationScopeBoard, ProjectID: project.ID, BoardID: board.ID, Lane: canonicalLane(board, lane), Position: int64(len(existing)+1) * 1024, Title: strings.TrimSpace(input.Title), InitialPrompt: strings.TrimSpace(input.Prompt), Provider: input.Provider, Model: input.Model, Effort: input.Effort, ProviderOptions: home.CloneStringMap(input.ProviderOptions), Runtime: "idle", RuntimeUpdatedAt: now, LastActivityAt: now, PhaseChangedAt: now, CreatedAt: now, UpdatedAt: now, LabelIDs: labelIDs, Origin: input.Origin, WorkspaceMode: workspaceMode, WorkspaceBranch: strings.TrimSpace(input.WorkspaceBranch), WorkspaceBaseBranch: strings.TrimSpace(input.WorkspaceBaseBranch), WorkspaceBaseRemote: baseRemote, RemotePublishMode: remotePublishMode, VaultAccess: input.VaultAccess, MailAccess: input.MailAccess, CodeReview: input.CodeReview, Memory: input.Memory, MemoryRole: input.MemoryRole, ProviderAccountID: strings.TrimSpace(input.ProviderAccountID)}
 	item.OrderKey, err = s.MoveOrderKey(item, nil)
 	if err != nil {
 		return model.Card{}, err
@@ -190,7 +191,7 @@ func (s *Store) CreateChat(input CreateCardInput) (model.Card, error) {
 		return model.Card{}, err
 	}
 	now := home.Timestamp()
-	item := model.Card{ID: input.ID, OwnerDaemonID: checkout.DaemonID, CheckoutID: checkout.ID, Scope: model.ConversationScopeChat, ProjectID: project.ID, Position: int64(len(existing)+1) * 1024, Title: title, InitialPrompt: strings.TrimSpace(input.Prompt), Provider: input.Provider, Model: input.Model, Effort: input.Effort, ProviderOptions: home.CloneStringMap(input.ProviderOptions), Runtime: "idle", RuntimeUpdatedAt: now, LastActivityAt: now, PhaseChangedAt: now, CreatedAt: now, UpdatedAt: now, WorkspaceMode: workspaceMode, WorkspaceBranch: strings.TrimSpace(input.WorkspaceBranch), WorkspaceBaseBranch: strings.TrimSpace(input.WorkspaceBaseBranch), WorkspaceBaseRemote: baseRemote, RemotePublishMode: remotePublishMode, VaultAccess: input.VaultAccess, MailAccess: input.MailAccess, CodeReview: input.CodeReview, ProviderAccountID: strings.TrimSpace(input.ProviderAccountID)}
+	item := model.Card{ID: input.ID, OwnerDaemonID: checkout.DaemonID, CheckoutID: checkout.ID, Scope: model.ConversationScopeChat, ProjectID: project.ID, Position: int64(len(existing)+1) * 1024, Title: title, InitialPrompt: strings.TrimSpace(input.Prompt), Provider: input.Provider, Model: input.Model, Effort: input.Effort, ProviderOptions: home.CloneStringMap(input.ProviderOptions), Runtime: "idle", RuntimeUpdatedAt: now, LastActivityAt: now, PhaseChangedAt: now, CreatedAt: now, UpdatedAt: now, WorkspaceMode: workspaceMode, WorkspaceBranch: strings.TrimSpace(input.WorkspaceBranch), WorkspaceBaseBranch: strings.TrimSpace(input.WorkspaceBaseBranch), WorkspaceBaseRemote: baseRemote, RemotePublishMode: remotePublishMode, VaultAccess: input.VaultAccess, MailAccess: input.MailAccess, CodeReview: input.CodeReview, Memory: input.Memory, MemoryRole: input.MemoryRole, ProviderAccountID: strings.TrimSpace(input.ProviderAccountID)}
 	item.OrderKey, err = s.MoveOrderKey(item, nil)
 	if err != nil {
 		return model.Card{}, err
@@ -811,6 +812,28 @@ func (s *Store) CardDetail(ref string) (model.CardDetail, error) {
 
 func containsFold(value, query string) bool {
 	return strings.Contains(strings.ToLower(value), strings.ToLower(query))
+}
+
+// SetMemory switches a local conversation's agent memory on or off; it takes
+// effect at the next turn.
+func (s *Store) SetMemory(ref string, enabled bool) (model.Card, error) {
+	release, err := s.home.BeginWrite()
+	if err != nil {
+		return model.Card{}, err
+	}
+	defer release()
+	item, err := s.ResolveCard(ref)
+	if err != nil {
+		return model.Card{}, err
+	}
+	if err = s.RequireLocalCard(item); err != nil {
+		return model.Card{}, err
+	}
+	if item.Memory == enabled {
+		return item, nil
+	}
+	item.Memory, item.UpdatedAt = enabled, home.Timestamp()
+	return s.SaveCard(item)
 }
 
 // SetCodeReview switches a local conversation's code reviewer on or off. It is

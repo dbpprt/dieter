@@ -13,6 +13,7 @@ import com.getdieter.api.v1.PinChatRequest
 import com.getdieter.api.v1.RenameCardRequest
 import com.getdieter.api.v1.SetCardCodeReviewRequest
 import com.getdieter.api.v1.SetCardLabelsRequest
+import com.getdieter.api.v1.SetCardMemoryRequest
 import com.getdieter.api.v1.UpdateCardRequest
 import com.getdieter.core.api.DaemonApi
 import com.getdieter.core.machines.MachineChoice
@@ -175,6 +176,27 @@ class BoardOperations(
                     .execute(SetCardCodeReviewRequest(card_id = cardId, enabled = enabled))
         }
         return saved ?: card.copy(code_review = enabled)
+    }
+
+    /**
+     * Switches [cardId]'s agent memory on its machine, shown at once; returns the card as the
+     * machine saved it, or as shown when there was nothing to change.
+     */
+    suspend fun setMemory(cardId: String, enabled: Boolean): Card {
+        val card = card(cardId)
+        if (card.memory == enabled) return card
+        var saved: Card? = null
+        mutate(
+            cardId,
+            CardOperation.UPDATING,
+            owner(card),
+            FieldOverlay(cardId, { it.copy(memory = enabled) }, { it.memory == enabled }),
+        ) {
+            saved =
+                it.SetCardMemory()
+                    .execute(SetCardMemoryRequest(card_id = cardId, enabled = enabled))
+        }
+        return saved ?: card.copy(memory = enabled)
     }
 
     /** Edits a never-started todo card's title, task, and agent. */

@@ -99,7 +99,9 @@ type CreateConversationRequest struct {
 	// Provider account for the first turn; empty uses the provider default.
 	AccountId string `protobuf:"bytes,27,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
 	// Give this conversation's agent turns the code reviewer (ReviewService).
-	CodeReview    bool `protobuf:"varint,28,opt,name=code_review,json=codeReview,proto3" json:"code_review,omitempty"`
+	CodeReview bool `protobuf:"varint,28,opt,name=code_review,json=codeReview,proto3" json:"code_review,omitempty"`
+	// Agent memory for this conversation; absent follows the project.
+	Memory        *bool `protobuf:"varint,29,opt,name=memory,proto3,oneof" json:"memory,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -305,6 +307,13 @@ func (x *CreateConversationRequest) GetAccountId() string {
 func (x *CreateConversationRequest) GetCodeReview() bool {
 	if x != nil {
 		return x.CodeReview
+	}
+	return false
+}
+
+func (x *CreateConversationRequest) GetMemory() bool {
+	if x != nil && x.Memory != nil {
+		return *x.Memory
 	}
 	return false
 }
@@ -1131,7 +1140,7 @@ const file_dieter_v1_cards_proto_rawDesc = "" +
 	"\n" +
 	"\x15dieter/v1/cards.proto\x12\tdieter.v1\x1a\x16dieter/v1/common.proto\x1a\x1bgoogle/protobuf/empty.proto\"6\n" +
 	"\rCardsResponse\x12%\n" +
-	"\x05cards\x18\x01 \x03(\v2\x0f.dieter.v1.CardR\x05cards\"\xfe\a\n" +
+	"\x05cards\x18\x01 \x03(\v2\x0f.dieter.v1.CardR\x05cards\"\xa6\b\n" +
 	"\x19CreateConversationRequest\x12\x1f\n" +
 	"\vcheckout_id\x18\x18 \x01(\tR\n" +
 	"checkoutId\x12\x1d\n" +
@@ -1165,10 +1174,12 @@ const file_dieter_v1_cards_proto_rawDesc = "" +
 	"\n" +
 	"account_id\x18\x1b \x01(\tR\taccountId\x12\x1f\n" +
 	"\vcode_review\x18\x1c \x01(\bR\n" +
-	"codeReview\x1aB\n" +
+	"codeReview\x12\x1b\n" +
+	"\x06memory\x18\x1d \x01(\bH\x00R\x06memory\x88\x01\x01\x1aB\n" +
 	"\x14ProviderOptionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"=\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01B\t\n" +
+	"\a_memory\"=\n" +
 	"\x10ListChatsRequest\x12)\n" +
 	"\x10include_archived\x18\x01 \x01(\bR\x0fincludeArchived\"l\n" +
 	"\x0fForkChatRequest\x12$\n" +
@@ -1343,6 +1354,7 @@ func file_dieter_v1_cards_proto_init() {
 		return
 	}
 	file_dieter_v1_common_proto_init()
+	file_dieter_v1_cards_proto_msgTypes[1].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

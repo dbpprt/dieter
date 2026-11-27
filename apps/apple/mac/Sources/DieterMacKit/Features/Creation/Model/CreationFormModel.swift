@@ -107,6 +107,13 @@ package final class CreationFormModel {
     /// The lane the task starts in: the chosen one, else the core's default.
     package var lane: String { intent.lane.isEmpty ? preview.intent.lane : intent.lane }
 
+    /// The conversation's agent memory: the chosen value, else the project's
+    /// default the core previews. Never remembered between forms.
+    package var memory: Bool {
+        get { intent.hasMemory ? intent.memory : preview.intent.memory }
+        set { intent.memory = newValue }
+    }
+
     /// Creates the conversation from the choices and attachments through
     /// `submit` (the intent, whether it is a chat, and the submission ID);
     /// a success starts a new submission.

@@ -112,6 +112,38 @@ class CreationCommandsTest {
     }
 
     @Test
+    fun agentMemoryFollowsTheProjectUnlessTheFormChoosesOtherwise() {
+        val remembering = project.copy(memory_enabled = true)
+        // A project with memory on gives new conversations memory; the form may switch it off.
+        assertEquals(true, Creation.memory(remembering, null))
+        assertEquals(false, Creation.memory(remembering, false))
+        // Without the project's memory there is nothing to switch, and nothing is sent.
+        assertNull(Creation.memory(project, null))
+        assertNull(Creation.memory(project, true))
+
+        val on = CreationInput(project = remembering, board = board)
+        assertEquals(true, creationIntent(on).memory)
+        assertEquals(true, Creation.request(on).memory)
+        val off = on.copy(memory = false)
+        assertEquals(false, creationIntent(off).memory)
+        assertEquals(false, Creation.request(off).memory)
+        val none = CreationInput(project = project, board = board, memory = true)
+        assertNull(creationIntent(none).memory)
+        assertNull(Creation.request(none).memory, "absent follows the project")
+
+        val destinations =
+            CreationDestinations(online = setOf("d1"), catalogs = mapOf("d1" to listOf(codex)))
+        val shown =
+            creationPreview(Creation.plan(on.copy(checkoutId = "k1", title = "t"), destinations))
+        assertTrue(shown.memory_available)
+        assertEquals(true, shown.intent!!.memory)
+        val hidden =
+            creationPreview(Creation.plan(none.copy(checkoutId = "k1", title = "t"), destinations))
+        assertFalse(hidden.memory_available, "the form hides the switch")
+        assertNull(hidden.intent!!.memory)
+    }
+
+    @Test
     fun formChoicesSurviveClosingAndReloadingWithoutSubmission() {
         val storage =
             com.getdieter.core.storage.CoreStorage(

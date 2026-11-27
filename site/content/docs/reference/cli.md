@@ -40,6 +40,7 @@ Commands:
   harness      List target daemon harnesses, models, and options
   provider     Add Claude and ChatGPT accounts, sign in on machines, read plan usage
   reviewer     Show or change the account's code reviewer: harness, model, depth, limits
+  memory       Agent memory: recall, save, forget, settings and dreams
   project      Create, browse, configure archive cleanup, relocate, and restore projects
   board        Manage boards, retirement/restore, hostnames, workflows, and labels
   card         Create, edit, read, present files, merge, and manage board conversations
@@ -539,6 +540,228 @@ Options:
 Agent turns cannot change the setting.
 ```
 
+## dieter memory
+
+```text
+Usage: dieter memory <action>
+
+Actions:
+  status     Show this machine's memory index and each project's memory state
+  search     Recall a project's saved memories and earlier conversations
+  save       Save a curated memory (lesson, decision, fact or pattern)
+  forget     Delete a saved memory, or a conversation's or project's index rows
+  reindex    Rebuild this machine's index of a project
+  settings   Show or change the account's memory and dreaming setting
+  dream      Start, list, apply, discard or undo memory dreams
+
+Agent memory is per project: turn it on with dieter project update
+--memory=true PROJECT. Each memory-enabled conversation's finished turns are
+indexed on the machine that owns it; recall searches every machine of the
+account that owns conversations of the project. Saved memories replicate to
+every machine. A conversation's own switch is dieter card memory CARD on|off.
+
+Dreaming reconciles a project's saved memories with an agent session
+configured in dieter memory settings: a conversation labelled Memory on the
+project's first board, whose agent merges, supersedes, retires and adds
+memories. Inside an agent turn, search and save use the turn's own project;
+forget, reindex, settings, dreams and switches are refused.
+```
+
+### dieter memory status
+
+```text
+Usage: dieter memory status [--project PROJECT] [--format text|json]
+
+Show this machine's memory index (size, conversations and observations
+indexed, backlog) and, per project with memory on, its saved memories and
+dreaming state: the last dream and when the next one may start.
+Global --machine asks another machine.
+```
+
+### dieter memory search
+
+```text
+Usage: dieter memory search [--project PROJECT] [--limit N] [--file PATH ...] [--kind KIND ...] [--local] [--format text|json] QUERY...
+
+Recall a project's saved memories and the earlier conversations that best
+match QUERY: their card, machine, title, matching passages and final answer.
+Conversations on other machines of the account are searched too, unless
+--local; machines that do not answer are listed. Results are earlier work that
+may be out of date; read a conversation with dieter --machine MACHINE card
+transcript CARD.
+
+Options:
+  --project PROJECT   Project ID or name (inside an agent turn: the turn's own)
+  --limit N           Conversations to return (1-10, default 6)
+  --file PATH         Only conversations that touched PATH; repeat
+  --kind KIND         Only saved memories of this kind (lesson, decision, fact,
+                      pattern); repeat
+  --local             Search only this machine's index
+  --format text|json  Output format
+```
+
+### dieter memory save
+
+```text
+Usage: dieter memory save [--project PROJECT] [--kind KIND] [--file PATH ...] [--source CARD ...] [--ttl DAYS] [--replaces ID] [--format text|json] TEXT...
+
+Save one curated memory of a project, shared with future conversations on
+every machine. Kinds: lesson (a rule learned the hard way), decision (what
+was decided and why), fact, pattern. Saving an identical lesson again
+reinforces it; a near-identical memory, or the one named by --replaces, is
+superseded. Inside an agent turn the memory belongs to the turn's project and
+names its conversation as the source.
+
+Options:
+  --project PROJECT   Project ID or name (inside an agent turn: the turn's own)
+  --kind KIND         lesson, decision, fact (default) or pattern
+  --file PATH         A file the memory is about; repeat (at most 20)
+  --source CARD       A conversation the memory comes from; repeat (at most 8)
+  --ttl DAYS          Forget it after DAYS days (default: keep)
+  --replaces ID       Supersede this saved memory
+  --format text|json  Output format
+```
+
+### dieter memory forget
+
+```text
+Usage: dieter memory forget --project PROJECT (--memory ID | --card CARD | --all)
+
+Delete a saved memory on every machine (--memory), or this machine's index
+rows of a conversation (--card) or of the whole project (--all). Index rows
+come back when the conversation is indexed again (dieter memory reindex);
+turn a conversation's memory off with dieter card memory CARD off.
+Agent turns cannot forget.
+```
+
+### dieter memory reindex
+
+```text
+Usage: dieter memory reindex --project PROJECT
+
+Rebuild this machine's index of a project from its conversations' stored
+transcripts. Saved memories are not affected. Agent turns cannot reindex.
+Global --machine reindexes another machine.
+```
+
+### dieter memory settings
+
+```text
+Usage: dieter memory settings [show] [--format text|json]
+
+Print the account's memory and dreaming setting (dieter memory settings
+update changes it). Until someone saves one, the defaults are shown and
+"configured" is false.
+```
+
+### dieter memory settings show
+
+```text
+Usage: dieter memory settings [show] [--format text|json]
+
+Print the account's memory and dreaming setting (dieter memory settings
+update changes it). Until someone saves one, the defaults are shown and
+"configured" is false.
+```
+
+### dieter memory settings update
+
+```text
+Usage: dieter memory settings update [options]
+
+Change the account's memory and dreaming setting. Options you leave out keep
+their current value.
+
+Options:
+  --dreaming on|off          Reconcile memory-enabled projects' saved memories
+                             with dreams (default off)
+  --harness HARNESS          Catalog harness the dreams run on; Strix is refused
+  --model MODEL              Model of that harness
+  --effort EFFORT            Reasoning effort (empty: the model's default)
+  --account ID|LABEL         Provider account for Claude Code and Codex dreams;
+                             "" uses the provider's default
+  --run-on MACHINE           Machine (daemon ID) that runs dreams; "" picks, per
+                             project, the machine with most of its conversations
+  --min-hours N              Hours between a project's dreams (1-168, default 24)
+  --min-tasks N              Conversations that must finish first (1-100,
+                             default 5)
+  --window HH:MM-HH:MM       Local time window for dreams ("" any time;
+                             default 02:00-06:00)
+  --apply auto|review        auto applies a validated dream at once (undo
+                             restores); review stages it until applied
+  --max-changes N            Changes per dream (1-100, default 40)
+  --max-retire-percent N     Share of active memories a dream may retire or
+                             supersede (1-100, default 25)
+  --instructions TEXT        Extra instructions for every dream (4 KiB)
+  --instructions-file FILE   Read them from FILE or -
+  --format text|json         Output format
+
+Agent turns cannot change the setting.
+```
+
+### dieter memory dream
+
+```text
+Usage: dieter memory dream <action>
+
+Actions:
+  start PROJECT   Start a dream of PROJECT now (dreaming need not be on)
+  list PROJECT    List PROJECT's dreams on this machine, newest first
+  apply CARD      Apply a dream's staged changes (apply mode review)
+  discard CARD    Discard a dream's staged changes
+  undo CARD       Restore the saved memories an applied dream changed
+
+A dream is a conversation labelled Memory on the project's first board, on
+the harness, model and account of dieter memory settings. Its agent reads the
+saved memories and the conversations since the last dream and changes the
+memories with one validated batch. Global --machine selects the machine that
+ran the dream. Agent turns cannot start, apply, discard or undo dreams.
+```
+
+### dieter memory dream start
+
+```text
+Usage: dieter memory dream start [--format text|json] PROJECT
+
+Start a dream of PROJECT now, regardless of the dreaming schedule, unless one is
+running or awaiting review. Agent turns cannot start dreams.
+```
+
+### dieter memory dream list
+
+```text
+Usage: dieter memory dream list [--format text|json] PROJECT
+
+List PROJECT's dreams on this machine, newest first.
+```
+
+### dieter memory dream apply
+
+```text
+Usage: dieter memory dream apply [--format text|json] CARD
+
+Apply a dream's staged changes after reviewing them (apply mode review); the batch is validated again against the memories as they are now. Agent turns cannot apply dreams.
+Global --machine selects the machine that ran the dream.
+```
+
+### dieter memory dream discard
+
+```text
+Usage: dieter memory dream discard [--format text|json] CARD
+
+Discard a dream's staged changes. Agent turns cannot discard dreams.
+Global --machine selects the machine that ran the dream.
+```
+
+### dieter memory dream undo
+
+```text
+Usage: dieter memory dream undo [--format text|json] CARD
+
+Restore every saved memory an applied dream changed to its prior version and delete the memories it created. Agent turns cannot undo dreams.
+Global --machine selects the machine that ran the dream.
+```
+
 ## dieter project (alias: projects)
 
 ```text
@@ -619,7 +842,10 @@ Usage: dieter project show PROJECT
 ### dieter project update
 
 ```text
-Usage: dieter project update [--path PATH] [--name NAME] [--summary TEXT] [--prompt TEXT|--prompt-file FILE] [--hostname HOST[:PORT] ...|--clear-hostnames] [--delete-worktrees-on-archive=true|false] PROJECT
+Usage: dieter project update [--path PATH] [--name NAME] [--summary TEXT] [--prompt TEXT|--prompt-file FILE] [--hostname HOST[:PORT] ...|--clear-hostnames] [--delete-worktrees-on-archive=true|false] [--memory=true|false] PROJECT
+
+Agent memory (--memory) indexes the project's conversations and gives their agents
+memory_recall and memory_save; omit the flag to preserve it. See dieter memory --help.
 
 Archive cleanup defaults to false; omit its flag to preserve the current preference.
 Enabling cleanup also includes existing archives. Ignored files and build output are
@@ -875,6 +1101,7 @@ Actions:
   review       Review the card's changes with the code reviewer
   reviews      List the card's code reviews, or show one
   reviewer     Switch the card's code reviewer on or off
+  memory       Switch the card's agent memory on or off
   read         Mark a displayed model response as seen
   rename       Rename a card
   update       Update the title, or a draft's task brief and agent settings
@@ -936,6 +1163,19 @@ Agent turns cannot switch it.
 Global --machine selects the owning daemon through authenticated direct/relay routes.
 ```
 
+### dieter card memory
+
+```text
+Usage: dieter card memory CARD on|off
+
+Switch the conversation's agent memory on or off. From its next turn, while
+its project has memory on, its finished turns are (or are not) indexed and its
+agent gets (or loses) memory_recall and memory_save. Turning it off keeps
+what was indexed; dieter memory forget --card CARD removes it.
+Agent turns cannot switch it.
+Global --machine selects the owning daemon through authenticated direct/relay routes.
+```
+
 ### dieter card create
 
 ```text
@@ -967,6 +1207,8 @@ Options:
   --code-review             Give this conversation's agent turns the code
                             reviewer (switch later with dieter card reviewer;
                             see dieter reviewer --help)
+  --memory on|off           Agent memory for this conversation (default: the
+                            project's setting; see dieter memory --help)
   --format json|id          Output format
 
 Destination defaults to the running local daemon. Pass global --machine ID|NAME
@@ -1158,8 +1400,8 @@ Usage: dieter chat <action>
 
 Actions:
   create, list, show, context, transcript, poll, watch, tool-output, send,
-  queue, cancel, present, review, reviews, reviewer, read, rename, update,
-  fork, archive, unarchive, workspace, pin, unpin
+  queue, cancel, present, review, reviews, reviewer, memory, read, rename,
+  update, fork, archive, unarchive, workspace, pin, unpin
 
 A standalone chat is a conversation without a board: it has no lanes or labels
 and starts when created. Actions take the same options as their card versions
@@ -1214,6 +1456,19 @@ Agent turns cannot switch it.
 Global --machine selects the owning daemon through authenticated direct/relay routes.
 ```
 
+### dieter chat memory
+
+```text
+Usage: dieter chat memory CHAT on|off
+
+Switch the conversation's agent memory on or off. From its next turn, while
+its project has memory on, its finished turns are (or are not) indexed and its
+agent gets (or loses) memory_recall and memory_save. Turning it off keeps
+what was indexed; dieter memory forget --card CHAT removes it.
+Agent turns cannot switch it.
+Global --machine selects the owning daemon through authenticated direct/relay routes.
+```
+
 ### dieter chat create
 
 ```text
@@ -1243,6 +1498,8 @@ Options:
   --code-review             Give this conversation's agent turns the code
                             reviewer (switch later with dieter chat reviewer;
                             see dieter reviewer --help)
+  --memory on|off           Agent memory for this conversation (default: the
+                            project's setting; see dieter memory --help)
   --format json|id          Output format
 
 Destination defaults to the running local daemon. Pass global --machine ID|NAME

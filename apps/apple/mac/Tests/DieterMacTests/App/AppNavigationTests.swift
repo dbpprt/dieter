@@ -8,10 +8,11 @@ struct AppNavigationTests {
         #expect(AppSection.allCases.contains(.settings))
         #expect(
             DieterSettingsSection.allCases.map(\.rawValue) == [
-                "General", "Browser", "Connection", "Devices", "Folders", "Providers", "Code reviewer", "Prompts",
-                "Notifications", "Island", "Agents", "Experimental",
+                "General", "Browser", "Connection", "Devices", "Folders", "Providers", "Code reviewer",
+                "Agent memory", "Prompts", "Notifications", "Island", "Agents", "Experimental",
             ])
         #expect(DieterSettingsSection.codeReviewer.identifier == "code-reviewer")
+        #expect(DieterSettingsSection.memory.identifier == "agent-memory")
         #expect(DieterSettingsSection.providers.identifier == "providers")
     }
 

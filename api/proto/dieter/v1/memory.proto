@@ -1,0 +1,301 @@
+syntax = "proto3";
+
+package dieter.v1;
+
+option go_package = "github.com/dbpprt/dieter/internal/gen/dieter/v1;dieterv1";
+option java_multiple_files = true;
+option java_package = "com.getdieter.api.v1";
+
+import "dieter/v1/common.proto";
+import "google/protobuf/empty.proto";
+
+// Agent memory (docs/adr/0007-agent-memory.md). A project with memory on has
+// its conversations' finished turns indexed on their owner daemon (a derived,
+// machine-local full-text index that is never replicated); agent turns recall
+// from it with memory_recall and save curated memories with memory_save.
+// Saved memories (lessons, decisions, facts, patterns) replicate between the
+// account's daemons as validated records. Recall searches every daemon that
+// owns conversations of the project and merges their answers.
+//
+// Dreaming reconciles a project's saved memories with an agent session
+// configured in the account-wide memory setting: a visible conversation with
+// the board's Memory label and the dreamer role, on one designated machine.
+service MemoryService {
+  // GetMemoryStatus reports this daemon's index and the projects' memory
+  // state.
+  rpc GetMemoryStatus(GetMemoryStatusRequest) returns (MemoryStatus);
+  // SearchMemory recalls saved memories and indexed conversations of a
+  // project. An agent turn always searches its own conversation's project.
+  // local_only answers from this daemon's index alone (peer daemons use it).
+  rpc SearchMemory(SearchMemoryRequest) returns (MemorySearchResult);
+  // SaveMemory saves a curated memory of a project. An agent turn saves into
+  // its own conversation's project, with the conversation as origin.
+  rpc SaveMemory(SaveMemoryRequest) returns (SaveMemoryResult);
+  // ForgetMemory deletes a saved memory, or a conversation's or a project's
+  // index rows on this daemon. Agent turns are refused.
+  rpc ForgetMemory(ForgetMemoryRequest) returns (google.protobuf.Empty);
+  // ReindexMemory rebuilds this daemon's index rows of a project. Agent
+  // turns are refused.
+  rpc ReindexMemory(ReindexMemoryRequest) returns (MemoryStatus);
+  // SetCardMemory switches a conversation's memory on or off; it takes
+  // effect at the next turn. Agent turns are refused.
+  rpc SetCardMemory(SetCardMemoryRequest) returns (Card);
+  // GetMemorySettings returns the account's memory setting, or the defaults
+  // (configured false) when nobody has saved one yet.
+  rpc GetMemorySettings(google.protobuf.Empty) returns (MemorySettings);
+  // UpdateMemorySettings replaces the memory setting. Agent turns are
+  // refused.
+  rpc UpdateMemorySettings(UpdateMemorySettingsRequest) returns (MemorySettings);
+  // StartMemoryDream starts a dream of a project now, regardless of the
+  // dreaming schedule, unless one is running or awaiting review. Agent turns
+  // are refused.
+  rpc StartMemoryDream(StartMemoryDreamRequest) returns (MemoryDream);
+  // ListMemoryDreams lists a project's dreams, newest first.
+  rpc ListMemoryDreams(ListMemoryDreamsRequest) returns (MemoryDreamsResponse);
+  // ApplyMemoryDream applies a dream's staged changes (review mode). Agent
+  // turns are refused.
+  rpc ApplyMemoryDream(MemoryDreamRef) returns (MemoryDream);
+  // DiscardMemoryDream discards a dream's staged changes. Agent turns are
+  // refused.
+  rpc DiscardMemoryDream(MemoryDreamRef) returns (MemoryDream);
+  // UndoMemoryDream restores the saved memories an applied dream changed.
+  // Agent turns are refused.
+  rpc UndoMemoryDream(MemoryDreamRef) returns (MemoryDream);
+}
+
+message GetMemoryStatusRequest {
+  // Empty reports every project with memory on.
+  string project_id = 1;
+}
+
+message MemoryStatus {
+  string machine_id = 1;
+  string machine = 2;
+  // Size of this daemon's index file in bytes (0 before the first project
+  // with memory on).
+  int64 index_bytes = 3;
+  repeated MemoryProjectStatus projects = 4;
+  string last_error = 5;
+}
+
+message MemoryProjectStatus {
+  string project_id = 1;
+  string name = 2;
+  bool enabled = 3;
+  // Conversations and observations indexed on this daemon.
+  int32 cards = 4;
+  int64 observations = 5;
+  // Active saved memories of the project (replicated).
+  int32 saved = 6;
+  string last_indexed_at = 7;
+  // Conversations waiting to be indexed on this daemon.
+  int32 backlog = 8;
+  // The latest dream and when the next one may start.
+  string last_dream_at = 9;
+  string last_dream_card_id = 10;
+  string next_dream = 11;
+  // Memory-enabled conversations finished since the latest dream.
+  int32 finished_since_dream = 12;
+}
+
+message SearchMemoryRequest {
+  string project_id = 1;
+  string query = 2;
+  // At most this many conversations (1-10, default 6).
+  int32 limit = 3;
+  // Only observations touching one of these files.
+  repeated string files = 4;
+  // Only these saved memory kinds (lesson, decision, fact, pattern).
+  repeated string kinds = 5;
+  // Answer from this daemon's index only, without asking other daemons.
+  bool local_only = 6;
+}
+
+message MemorySearchResult {
+  // Saved memories, best first.
+  repeated SavedMemory memories = 1;
+  // Conversations, best first.
+  repeated MemoryHit hits = 2;
+  // Machines that own conversations of the project but did not answer.
+  repeated string unreachable = 3;
+  // True when results were left out to stay within the response budget.
+  bool truncated = 4;
+  int32 excluded = 5;
+}
+
+// MemoryHit is one conversation that matches a recall query.
+message MemoryHit {
+  string card_id = 1;
+  string machine_id = 2;
+  string machine = 3;
+  string title = 4;
+  string lane = 5;
+  string harness = 6;
+  string last_activity_at = 7;
+  // "board" or "chat".
+  string scope = 8;
+  // Up to two matching passages.
+  repeated string snippets = 9;
+  // The conversation's latest final answer, shortened.
+  string final_answer = 10;
+  // The message of the best matching passage.
+  string message_id = 11;
+}
+
+// SavedMemory is a curated memory of a project. It replicates between the
+// account's daemons; retire and supersede keep it as history.
+message SavedMemory {
+  string id = 1;
+  string project_id = 2;
+  // "lesson", "decision", "fact" or "pattern".
+  string kind = 3;
+  string content = 4;
+  repeated string files = 5;
+  // Conversations the memory comes from.
+  repeated string sources = 6;
+  // "active", "superseded" or "retired".
+  string status = 7;
+  string superseded_by = 8;
+  // Checked against its source conversations by a dream.
+  bool verified = 9;
+  // 0-1; lessons gain confidence each time they are saved again.
+  double confidence = 10;
+  int32 reinforcements = 11;
+  string expires_at = 12;
+  string created_by_machine_id = 13;
+  string created_by_card_id = 14;
+  string created_by_harness = 15;
+  // The dream conversation that last changed it.
+  string dream_card_id = 16;
+  string created_at = 17;
+  string updated_at = 18;
+  string reason = 19;
+}
+
+message SaveMemoryRequest {
+  string project_id = 1;
+  string content = 2;
+  string kind = 3;
+  repeated string files = 4;
+  repeated string sources = 5;
+  // Forget the memory after this many days (0: keep).
+  int32 ttl_days = 6;
+  // Supersede this saved memory with the new one.
+  string replaces_id = 7;
+}
+
+message SaveMemoryResult {
+  SavedMemory memory = 1;
+  // A close existing memory the caller may want to supersede instead.
+  SavedMemory similar_to = 2;
+  string superseded_id = 3;
+  // True when an identical lesson was reinforced instead of duplicated.
+  bool reinforced = 4;
+}
+
+message ForgetMemoryRequest {
+  string project_id = 1;
+  // Exactly one of: a saved memory, a conversation's index rows, or all of
+  // the project's index rows on this daemon.
+  string memory_id = 2;
+  string card_id = 3;
+  bool all = 4;
+}
+
+message ReindexMemoryRequest {
+  string project_id = 1;
+}
+
+message SetCardMemoryRequest {
+  string card_id = 1;
+  bool enabled = 2;
+}
+
+message MemorySettings {
+  // Dreaming reconciles saved memories with an agent session.
+  bool dreaming = 1;
+  // Catalog harness, model and effort the dreams run on.
+  string harness = 2;
+  string model = 3;
+  string effort = 4;
+  // Provider account for Claude Code and Codex dreams; empty uses the
+  // provider default.
+  string account_id = 5;
+  // The machine (daemon ID) that runs dreams; empty: per project, the machine
+  // that owns most of its memory-enabled conversations.
+  string run_on = 6;
+  // A dream starts only this many hours after the previous one (1-168) and
+  // after this many memory-enabled conversations finished (1-100).
+  int32 min_hours = 7;
+  int32 min_new_tasks = 8;
+  // Local start window on the dreaming machine, "HH:MM-HH:MM"; empty: any
+  // time.
+  string window = 9;
+  // "auto" applies a validated dream at once (undo restores); "review"
+  // stages it until someone applies it.
+  string apply = 10;
+  // A dream changes at most this many memories (1-100) and retires or
+  // supersedes at most this percentage of the active ones (1-100).
+  int32 max_operations = 11;
+  int32 max_retire_percent = 12;
+  // Extra instructions for every dream, at most 4 KiB.
+  string instructions = 13;
+  bool configured = 14;
+  string revision = 15;
+  string updated_at = 16;
+}
+
+message UpdateMemorySettingsRequest {
+  MemorySettings settings = 1;
+  // Compare-and-set: the revision the change is based on; empty overwrites.
+  string expected_revision = 2;
+}
+
+message StartMemoryDreamRequest {
+  string project_id = 1;
+}
+
+message ListMemoryDreamsRequest {
+  string project_id = 1;
+}
+
+message MemoryDreamsResponse {
+  repeated MemoryDream dreams = 1;
+}
+
+message MemoryDreamRef {
+  // The dream conversation.
+  string card_id = 1;
+}
+
+// MemoryDream is one reconciliation of a project's saved memories.
+message MemoryDream {
+  string card_id = 1;
+  string project_id = 2;
+  // "running", "staged" (awaiting review), "applied", "discarded", "undone",
+  // "empty" (finished without changes) or "failed".
+  string status = 3;
+  string machine_id = 4;
+  string started_at = 5;
+  string finished_at = 6;
+  int32 added = 7;
+  int32 merged = 8;
+  int32 superseded = 9;
+  int32 retired = 10;
+  int32 verified = 11;
+  repeated MemoryDreamOperation operations = 12;
+  string error = 13;
+}
+
+message MemoryDreamOperation {
+  // "add", "merge", "supersede", "retire" or "verify".
+  string op = 1;
+  // The memory written by add, merge and supersede.
+  string memory_id = 2;
+  // The memories merged, superseded, retired or verified.
+  repeated string target_ids = 3;
+  string kind = 4;
+  string content = 5;
+  repeated string sources = 6;
+  string reason = 7;
+}

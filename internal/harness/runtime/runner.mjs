@@ -78,6 +78,8 @@ const processBridge = request.backgroundProcessesEnabled
   : undefined;
 const codeReview = request.codeReviewEnabled ? await import("./code-review.mjs") : undefined;
 const reviewBridge = codeReview?.createCodeReviewBridge(input, send);
+const memory = request.memoryEnabled ? await import("./memory.mjs") : undefined;
+const memoryBridge = memory?.createMemoryBridge(input, send);
 // Agent channels: the daemon writes {"type":"steer","id","text"} lines while
 // a turn runs; each is offered to the running turn and answered with a
 // steer-result. The holder is declared before the SDK session exists.
@@ -121,7 +123,8 @@ function deliverSteer(text, reply) {
 function flushEarlySteers() {
   for (const [text, reply] of steerTarget.early.splice(0)) deliverSteer(text, reply);
 }
-if (!processBridge && !reviewBridge && request.steerEnabled !== true) input.close();
+if (!processBridge && !reviewBridge && !memoryBridge && request.steerEnabled !== true)
+  input.close();
 const adapter = request.adapter || request.harness;
 if (typeof request.sessionId !== "string" || !/^[A-Za-z0-9._-]+$/.test(request.sessionId)) {
   throw new Error("invalid harness session ID");
@@ -299,6 +302,19 @@ if (request.harness === "mock") {
       bridge: reviewBridge,
       workspace: actualWorkspace,
     })
+  ) {
+    send({ type: "session", state: { type: "resume-session", data: { mock: true } } });
+    await exitWorker(0);
+  }
+  if (
+    memory &&
+    (await memory.mockMemoryTurn({
+      runtimePrompt,
+      responseId,
+      createdAt,
+      send,
+      bridge: memoryBridge,
+    }))
   ) {
     send({ type: "session", state: { type: "resume-session", data: { mock: true } } });
     await exitWorker(0);
@@ -623,12 +639,16 @@ try {
   const reviewTools = reviewBridge
     ? codeReview.createCodeReviewTool(request, reviewBridge.call, { tool, z })
     : {};
+  const memoryTools = memoryBridge
+    ? memory.createMemoryTools(request, memoryBridge.call, { tool, z })
+    : {};
   const instructions = [
     request.instructions,
     taskPlanInstructions,
     request.contentPresentationEnabled ? contentPresentationInstructions(request) : "",
     processBridge ? backgroundProcessInstructions(request) : "",
     reviewBridge ? codeReview.codeReviewInstructions(request) : "",
+    memoryBridge ? memory.memoryInstructions(request) : "",
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -641,6 +661,7 @@ try {
         ...contentTools,
         ...processTools,
         ...reviewTools,
+        ...memoryTools,
         ...(adapter === "pi" ? { board_task_plan: piTaskPlanTool } : {}),
       },
       permissionMode: "allow-all",

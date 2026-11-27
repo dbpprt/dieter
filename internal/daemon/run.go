@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	hostmemory "github.com/dbpprt/dieter/internal/host/memory"
 	"io"
 	"log/slog"
 	"net"
@@ -221,6 +222,7 @@ func Run(ctx context.Context, cfg Config) error {
 	if deviceTrust != nil {
 		options.Trust = deviceTrust
 		options.FolderPeers = FolderPeerDialer(identity, deviceTrust)
+		options.MemoryPeers = hostmemory.Dialer(options.FolderPeers)
 		options.FolderTrusted = func(daemonID string) bool {
 			_, err := deviceTrust.DaemonKey(daemonID)
 			return err == nil

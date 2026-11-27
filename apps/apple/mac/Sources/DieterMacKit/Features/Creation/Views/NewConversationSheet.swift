@@ -139,6 +139,24 @@ struct NewConversationSheet: View {
                         "The agent can ask a separate reviewer model to check its changes. "
                             + "Switch it later from the conversation's menu."
                     )
+                    // Agent memory shows only for projects that have it on.
+                    if preview.memoryAvailable {
+                        LabeledContent("Agent memory") {
+                            HStack(spacing: 8) {
+                                Text("The agent recalls and saves what this project learned")
+                                Toggle("Agent memory", isOn: $form.memory)
+                                    .labelsHidden()
+                                    .toggleStyle(.switch)
+                                    .controlSize(.small)
+                                    .accessibilityIdentifier("memory")
+                                    .e2eTarget("memory")
+                            }
+                        }
+                        .help(
+                            "The agent recalls what earlier conversations of the project found and saves what it "
+                                + "learns. Switch it later from the conversation's menu."
+                        )
+                    }
 
                     if preview.catalog == .none {
                         HStack(spacing: 8) {

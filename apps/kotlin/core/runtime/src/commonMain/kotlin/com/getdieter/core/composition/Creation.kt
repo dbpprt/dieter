@@ -94,6 +94,11 @@ data class CreationInput(
     val mailAccess: Boolean = false,
     /** The conversation's agent turns get the code reviewer; switchable later. */
     val codeReview: Boolean = false,
+    /**
+     * Agent memory for the conversation ([Creation.memory]); null follows the project. Switchable
+     * later.
+     */
+    val memory: Boolean? = null,
 )
 
 /** The agent catalog a new conversation is checked against, relative to its destination machine. */
@@ -173,6 +178,13 @@ data class CreationPlan(
 
 /** Rules for creating conversations, shared by every creation surface. */
 object Creation {
+    /**
+     * A new conversation's agent memory: [chosen] when the form set it, else on, while [project]
+     * has memory on; null (absent: no memory) while it has not.
+     */
+    fun memory(project: Project, chosen: Boolean?): Boolean? =
+        if (project.memory_enabled) chosen ?: true else null
+
     /** Lanes a new task may start in: Todo saves it, Running starts it at once. */
     fun startLanes(board: Board?): List<Lane> =
         board?.lanes.orEmpty().filter { Lanes.isTodo(it.id) || Lanes.isRunning(it.id) }
@@ -405,6 +417,7 @@ object Creation {
             vault_access = input.vaultAccess,
             mail_access = input.mailAccess,
             code_review = input.codeReview,
+            memory = memory(input.project, input.memory),
             account_id = input.selection.account_id,
         )
     }

@@ -32,9 +32,11 @@ struct ConversationActionsMenu: View {
                 if context.model.chrome.canHalt {
                     Button("Halt agent", role: .destructive) { Task { await context.cancel(card) } }
                 }
-                // The agent's reviewer applies from its next turn.
+                // The agent's reviewer and memory apply from its next turn; a
+                // dream always has memory, so it shows no switch.
+                let memory = context.memory.flatMap { $0.shown ? $0 : nil }
+                if context.codeReview != nil || memory != nil { Divider() }
                 if let review = context.codeReview {
-                    Divider()
                     Toggle(
                         isOn: Binding(
                             get: { review.enabled },
@@ -44,6 +46,17 @@ struct ConversationActionsMenu: View {
                     }
                     .disabled(!review.canToggle)
                     .accessibilityIdentifier("code-review-switch")
+                }
+                if let memory {
+                    Toggle(
+                        isOn: Binding(
+                            get: { memory.enabled },
+                            set: { on in Task { await context.setMemory(enabled: on) } })
+                    ) {
+                        Label("Agent memory", systemImage: "clock.arrow.circlepath")
+                    }
+                    .disabled(!memory.canToggle)
+                    .accessibilityIdentifier("memory-switch")
                 }
                 Divider()
                 Button("Archive \(standalone ? "chat" : "card")", role: .destructive) {

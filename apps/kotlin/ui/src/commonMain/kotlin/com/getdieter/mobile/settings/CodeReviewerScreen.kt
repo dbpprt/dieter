@@ -191,7 +191,7 @@ internal fun CodeReviewerScreen(store: MobileStore) {
 
 /** A whole number within [range], stepped down and up. */
 @Composable
-private fun StepperRow(
+internal fun StepperRow(
     title: String,
     value: Int,
     range: IntRange,

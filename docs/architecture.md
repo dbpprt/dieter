@@ -188,7 +188,8 @@ internal/
   api/                   dieter.v1 services: one handler type per service (machine, state,
                          settings, projects, boards, cards, conversations, git, files,
                          terminals, executions, screens, control, schedules, vault, kv,
-                         peer, trust, channels, mail, folders, provider accounts),
+                         peer, trust, channels, mail, folders, provider accounts,
+                         reviews, memory),
                          composed in service.go; errors.go is the one status mapper
   engine/                turn engine: admission, leases, harness turns, queues
   engine/accounts/       provider accounts: KV registry, sign-in sessions, per-account
@@ -207,7 +208,8 @@ internal/
                          commands/, channels/, mail/ (agent mail), folders/ (synced folder
                          members: binding, index, checkpoints, trash, status), kanban/
                          (projects, checkouts, boards, cards, chats), workspaces/,
-                         conversations/, schedules/; vaults/, daemonstate/
+                         conversations/, schedules/; vaults/, daemonstate/; memory/
+                         (the machine-local agent memory index, SQLite FTS5, derived)
   replication/           crdt/ (bounded registers, provenance), schema/ (record kinds),
                          peersync/ (daemon-to-daemon exchange)
   link/                  gateway link client, enrollment identity and device trust
@@ -233,6 +235,11 @@ internal/
   host/folders/          synced folder engine, started only by dieter serve: watchers,
                          scanner, peer loops and pulls, client registry, folder-member
                          records, trash sweeper, status and change-stream heads
+  memory/                agent memory rules without I/O: observations from transcripts,
+                         secret scrubbing, query terms, similarity
+  host/memory/           agent memory service, background work started only by dieter
+                         serve: indexing finished turns, recall across daemons, saved
+                         memories, dream scheduling, validation, apply and undo
   host/                  machine/ (telemetry, power, updates), terminal/, remoteexec/,
                          serviceruntime/ (signed executables at stable paths)
   remotedesktop/         screen sessions, WebRTC media, native helper IPC

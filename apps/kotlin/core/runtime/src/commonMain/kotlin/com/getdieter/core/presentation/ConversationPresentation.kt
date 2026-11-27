@@ -4,6 +4,7 @@ import com.getdieter.api.v1.Board
 import com.getdieter.api.v1.Card
 import com.getdieter.api.v1.Changeset
 import com.getdieter.api.v1.HarnessCatalog
+import com.getdieter.api.v1.MemoryDream
 import com.getdieter.api.v1.MessagePart
 import com.getdieter.api.v1.PendingTool
 import com.getdieter.api.v1.QueuedMessage
@@ -12,6 +13,7 @@ import com.getdieter.api.v1.TaskPlan
 import com.getdieter.api.v1.TaskPlanItem
 import com.getdieter.api.v1.UiMessage
 import com.getdieter.client.v1.ConversationCodeReview
+import com.getdieter.client.v1.ConversationMemory
 import com.getdieter.client.v1.ConversationState
 import com.getdieter.client.v1.QueuedMessageState
 import com.getdieter.client.v1.TimelineCodeReview
@@ -24,6 +26,7 @@ import com.getdieter.core.board.Runtimes
 import com.getdieter.core.composition.WorkspaceMode
 import com.getdieter.core.conversation.ConversationView
 import com.getdieter.core.conversation.TurnFailure
+import com.getdieter.core.memory.MemoryDreams
 import com.getdieter.core.metadata.MachineMetadata
 import com.getdieter.core.outbox.OutboxPolicy
 import com.getdieter.core.outbox.OutboxView
@@ -85,6 +88,10 @@ data class ConversationPresentation(
     val showReasoning: Boolean,
     /** The conversation's code reviewer; null until its card is known. */
     val codeReview: ConversationCodeReview? = null,
+    /**
+     * The conversation's agent memory and, for a dream, its dream; null until its card is known.
+     */
+    val memory: ConversationMemory? = null,
     private val pendingIds: Set<String>,
     private val acceptedIds: Set<String>,
     private val failedIds: Set<String>,
@@ -117,7 +124,8 @@ object ConversationPresenter {
      * as one. [harnesses] is the conversation machine's catalog, for context windows a step does
      * not report and code reviews' harness names. [cache] keeps per-message steps between
      * presentations of the same conversation. [codeReview] is the reviewer switch as this client
-     * shows it, else the card's.
+     * shows it, else the card's; [memory] likewise the memory switch. [projectMemory] is the
+     * project's memory switch, and [dream] a dream conversation's dream as its machine reported it.
      */
     fun present(
         view: ConversationView,
@@ -129,6 +137,9 @@ object ConversationPresenter {
         harnesses: HarnessCatalog? = null,
         cache: TimelineCache? = null,
         codeReview: Boolean? = null,
+        memory: Boolean? = null,
+        projectMemory: Boolean = false,
+        dream: MemoryDream? = null,
     ): ConversationPresentation {
         val conversation = view.conversation
         // Account previews may be ahead of a cached or delayed full transcript. They describe
@@ -244,6 +255,10 @@ object ConversationPresenter {
                 card?.let {
                     CodeReviewState.of(it, codeReview ?: it.code_review, latestReview(timeline))
                 },
+            memory =
+                card?.let {
+                    MemoryDreams.conversation(it, projectMemory, memory ?: it.memory, dream)
+                },
             pendingIds = outbox.pendingMessageIds,
             acceptedIds = outbox.acceptedIds,
             failedIds = outbox.failedIds,
@@ -263,6 +278,7 @@ object ConversationPresenter {
         machines: Map<String, MachineMetadata> = emptyMap(),
         showReasoning: Boolean = false,
         cache: TimelineCache? = null,
+        dream: MemoryDream? = null,
     ): ConversationPresentation {
         val listed = workspace.card(view.cardId)
         val card = view.card ?: listed
@@ -277,6 +293,9 @@ object ConversationPresenter {
             cache = cache,
             // The board's copy carries a switch in flight; the conversation's own may be older.
             codeReview = listed?.code_review,
+            memory = listed?.memory,
+            projectMemory = card?.project_id?.let(workspace::project)?.memory_enabled == true,
+            dream = dream,
         )
     }
 
@@ -307,6 +326,7 @@ object ConversationPresenter {
             chat = presented.chat,
             show_reasoning = presented.showReasoning,
             code_review = presented.codeReview,
+            memory = presented.memory,
             queued_messages =
                 presented.queue.mapIndexed { index, message ->
                     val pending = presented.unconfirmed(message.id)

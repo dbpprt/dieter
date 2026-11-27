@@ -30,6 +30,7 @@ module Dieter
       takeScreenshot
       pressKey
       scroll
+      scrollUntilVisible
     ].freeze
 
     module_function

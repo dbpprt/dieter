@@ -98,6 +98,17 @@ final class ConversationContext {
     func startCodeReview() async {
         do { try await model.startCodeReview() } catch { show(error) }
     }
+    /// The conversation's agent memory: its switch, and a dream conversation's
+    /// dream; nil until the conversation's card is known.
+    var memory: ClientConversationMemory? { model.chrome.memory }
+    /// Switches the conversation's agent memory; it applies from the agent's next turn.
+    func setMemory(enabled: Bool) async {
+        do { try await model.setMemory(enabled: enabled) } catch { show(error) }
+    }
+    /// Applies, discards or undoes the dream conversation's dream.
+    func reviewDream(_ action: MemoryDreamAction) async {
+        do { try await model.reviewDream(action) } catch { show(error) }
+    }
     /// Shows the conversation's Changes with `path` selected, e.g. a code review finding's file.
     func openChange(path: String) {
         let id = selectedCardID ?? selectedChatID ?? ""

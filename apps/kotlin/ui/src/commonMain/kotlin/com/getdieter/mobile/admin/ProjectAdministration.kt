@@ -102,6 +102,68 @@ internal fun FolderEditor(
         )
 }
 
+/**
+ * A project's memory as it stands, read from the machine that dreams for it, and a dream started
+ * now; the dream opens as the conversation it is.
+ */
+@Composable
+private fun ProjectMemoryStatus(store: MobileStore, projectId: String, dismiss: () -> Unit) {
+    val projects by store.memory.projects.collectAsState()
+    val session by store.session.slice.collectAsState()
+    val memory = projects[projectId] ?: ProjectMemory()
+    val now = rememberNow()
+    LaunchedEffect(projectId) { store.memory.loadProject(projectId) }
+    val status = memory.status
+    val project = status?.projects?.firstOrNull { it.project_id == projectId }
+    FormColumn {
+        if (project != null) {
+            val names = session.machines.associate { it.id to it.display_name }
+            Text(
+                com.getdieter.core.memory.MemoryForm.projectSummary(project, status.machine) +
+                    "\n" +
+                    com.getdieter.core.memory.MemoryForm.projectDreams(
+                        project,
+                        now.toEpochMilliseconds(),
+                    ) { id ->
+                        names[id]?.ifEmpty { null } ?: id
+                    },
+                Modifier.testTag("project-memory-status"),
+                style = type.footnote,
+                color = palette.secondaryLabel,
+            )
+        } else if (memory.problem.isEmpty()) Spinner(Modifier.size(20.dp))
+        if (memory.problem.isNotEmpty())
+            Text(memory.problem, style = type.footnote, color = palette.destructive)
+        memory.started?.let { dream ->
+            if (dream.error.isNotEmpty())
+                Text(
+                    "${dream.title}: ${dream.error}",
+                    style = type.footnote,
+                    color = palette.destructive,
+                )
+            if (dream.card_id.isNotEmpty())
+                DButton(
+                    "Open the dream",
+                    {
+                        dismiss()
+                        store.openConversation(dream.card_id)
+                    },
+                    Modifier.fillMaxWidth().testTag("project-memory-open-dream"),
+                    kind = ButtonKind.TONAL,
+                    glyph = Glyph.MOON,
+                )
+        }
+        DButton(
+            "Start a dream now",
+            { store.memory.startDream(projectId) },
+            Modifier.fillMaxWidth().testTag("project-memory-dream"),
+            kind = ButtonKind.TONAL,
+            enabled = !memory.starting,
+            loading = memory.starting,
+        )
+    }
+}
+
 /** Project administration presented from the project menu. */
 @Composable
 internal fun ProjectActionSheet(store: MobileStore, id: String, mode: String, dismiss: () -> Unit) {
@@ -152,6 +214,7 @@ private fun ProjectSettingsSheet(
     var branch by remember(project.id) { mutableStateOf(project.base_branch) }
     var deleteWorktreesOnArchive by
         remember(project.id) { mutableStateOf(project.delete_worktrees_on_archive) }
+    var memoryEnabled by remember(project.id) { mutableStateOf(project.memory_enabled) }
     var instructions by remember(project.id) { mutableStateOf(project.prompt) }
     var template by remember(project.id) { mutableStateOf(project.prompt_template) }
     val templateProblem =
@@ -182,6 +245,10 @@ private fun ProjectSettingsSheet(
                                             summary = summary,
                                             prompt = instructions,
                                             delete_worktrees_on_archive = deleteWorktreesOnArchive,
+                                            memory_enabled =
+                                                memoryEnabled.takeIf {
+                                                    it != project.memory_enabled
+                                                },
                                         )
                                 )
                         )
@@ -270,6 +337,26 @@ private fun ProjectSettingsSheet(
             )
         }
         FormColumn { Text(archiveOptions.archive_worktree_impact) }
+        SectionHeader("Agent memory")
+        Group(listOf(0)) { _, position ->
+            ListRow(
+                "Agent memory",
+                position = position,
+                subtitle =
+                    "Agents recall what earlier conversations found and save what they learn",
+                trailing = {
+                    DSwitch(
+                        memoryEnabled,
+                        { memoryEnabled = it },
+                        Modifier.testTag("project-memory").semantics {
+                            contentDescription = "Agent memory"
+                        },
+                    )
+                },
+            )
+        }
+        if (project.memory_enabled) ProjectMemoryStatus(store, project.id, dismiss)
+        else SectionFooter("New conversations of the project use memory once it is on.")
         SectionHeader("Agent instructions")
         FormColumn {
             MobileTextField(

@@ -56,6 +56,7 @@ import com.getdieter.core.mail.MailMachine
 import com.getdieter.core.mail.MailProjection
 import com.getdieter.core.mail.MailRules
 import com.getdieter.core.mail.Mailbox
+import com.getdieter.core.memory.MemoryCalls
 import com.getdieter.core.metadata.MachineMetadataStore
 import com.getdieter.core.navigation.KvAcceptor
 import com.getdieter.core.navigation.NavigationEditor
@@ -259,6 +260,9 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
 
     /** The code reviewer's setting, conversations' switches, and the reviews users start. */
     val codeReviews = CodeReviewCalls(sessions, workspace, choice, board)
+
+    /** Agent memory: the account's setting, projects' state and dreams, conversations' switches. */
+    val memory = MemoryCalls(sessions, workspace, choice, board)
     val navigationKv =
         SharedKv(
             NAVIGATION_NAMESPACE,

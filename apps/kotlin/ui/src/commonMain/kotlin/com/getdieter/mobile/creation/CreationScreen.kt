@@ -370,7 +370,10 @@ internal fun CreationScreen(store: MobileStore, chat: Boolean) {
             }
             item("access") {
                 SectionHeader("Access")
-                Group(listOf(0, 1, 2)) { index, position ->
+                // Agent memory shows only for projects that have it on.
+                Group(if (preview.memory_available) listOf(0, 1, 2, 3) else listOf(0, 1, 2)) {
+                    index,
+                    position ->
                     if (index == 0)
                         ListRow(
                             "Allow vault access",
@@ -397,7 +400,7 @@ internal fun CreationScreen(store: MobileStore, chat: Boolean) {
                                 )
                             },
                         )
-                    else
+                    else if (index == 2)
                         ListRow(
                             "Code review",
                             position = position,
@@ -408,6 +411,19 @@ internal fun CreationScreen(store: MobileStore, chat: Boolean) {
                                     intent.code_review,
                                     { store.creation.update(intent.copy(code_review = it)) },
                                     Modifier.testTag("code-review"),
+                                )
+                            },
+                        )
+                    else
+                        ListRow(
+                            "Agent memory",
+                            position = position,
+                            subtitle = "The agent recalls and saves what this project learned",
+                            trailing = {
+                                DSwitch(
+                                    intent.memory != false,
+                                    { store.creation.update(intent.copy(memory = it)) },
+                                    Modifier.testTag("creation-memory"),
                                 )
                             },
                         )

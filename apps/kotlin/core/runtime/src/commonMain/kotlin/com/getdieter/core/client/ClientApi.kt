@@ -2,6 +2,7 @@ package com.getdieter.core.client
 
 import com.getdieter.api.v1.Harness
 import com.getdieter.api.v1.HarnessSelection
+import com.getdieter.api.v1.MemoryDream
 import com.getdieter.client.v1.Cards
 import com.getdieter.client.v1.ChannelsCommand
 import com.getdieter.client.v1.ChannelsSlice
@@ -503,6 +504,11 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
         command.code_review?.let {
             return runtime.executeCodeReview(it)
         }
+        // The memory setting is account-wide; a project's state goes to the machine that dreams
+        // for it, a conversation's switch and dream to its machine.
+        command.memory?.let {
+            return runtime.executeMemory(it)
+        }
         command.channels?.let {
             return channels(it)
         }
@@ -831,8 +837,18 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
                                 runtime.conversations.showReasoning,
                                 selections,
                                 runtime.providers.view,
+                                runtime.memory.dreams.map { it[cardId] }.distinctUntilChanged(),
                                 ::ComposerInputs,
                             )
+                        // A dream conversation's dream is kept on its machine.
+                        launch {
+                            runtime.memory.follow(
+                                cardId,
+                                combine(session.view, runtime.workspace.state) { view, workspace ->
+                                    workspace.card(cardId) to view.card
+                                },
+                            )
+                        }
                         combine(
                                 session.view.onEach { view ->
                                     // Existing conversations need their owner's catalog too;
@@ -854,6 +870,7 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
                                         machines,
                                         inputs.showReasoning,
                                         timeline,
+                                        dream = inputs.dream,
                                     )
                                 val controls =
                                     composerControls(
@@ -950,6 +967,8 @@ private data class ComposerInputs(
     val showReasoning: Boolean,
     val selections: Map<DraftKey, HarnessSelection>,
     val providers: ProvidersView,
+    /** The conversation's dream, when it is one and its machine reported it. */
+    val dream: MemoryDream?,
 )
 
 internal fun invalid(message: String): Nothing =

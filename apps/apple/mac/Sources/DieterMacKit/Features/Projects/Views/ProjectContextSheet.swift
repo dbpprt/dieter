@@ -29,6 +29,9 @@ struct ProjectContextSheet: View {
                     baseRemote: $draft.baseRemote, baseBranch: $draft.baseBranch,
                     deleteWorktreesOnArchive: $draft.deleteWorktreesOnArchive,
                     validationCommands: $draft.validationCommands, workspacesPresented: $workspacesPresented)
+                ProjectMemorySection(
+                    projectID: store.selectedProjectID, enabled: store.selectedProject?.memoryEnabled == true,
+                    draft: $draft.memoryEnabled, openDream: openDream)
                 Section("Checkouts & machines") {
                     ProjectCheckoutMenu(projectID: store.selectedProjectID, size: 28)
                     let checkouts = store.selectedProject?.checkoutChoices ?? []
@@ -84,6 +87,8 @@ struct ProjectContextSheet: View {
                     .buttonStyle(DieterBarButtonStyle(prominent: true))
                     .keyboardShortcut(.defaultAction)
                     .disabled(saving || !draft.isValid)
+                    .accessibilityIdentifier("project.context.save")
+                    .e2eTarget("project.context.save")
             }
             .padding(20)
         }
@@ -125,10 +130,19 @@ struct ProjectContextSheet: View {
                     )
                 else { return }
             }
+            // Agent memory goes out only when switched, like the daemon's other optional settings.
+            let memory = store.selectedProject.map(\.memoryEnabled) == draft.memoryEnabled ? nil : draft.memoryEnabled
             await store.updateProject(
                 name: draft.name, summary: draft.summary, prompt: draft.prompt,
-                deleteWorktreesOnArchive: draft.deleteWorktreesOnArchive)
+                deleteWorktreesOnArchive: draft.deleteWorktreesOnArchive, memoryEnabled: memory)
         }
+    }
+
+    /// Opens a dream started here as the conversation it is.
+    private func openDream(_ id: String) {
+        let chat = store.chats.contains(where: { $0.id == id })
+        dismiss()
+        Task { await store.openConversation(cardID: id, chat: chat) }
     }
 
     /// Whether the Git base or validation commands differ from what the project shows.
@@ -247,6 +261,8 @@ struct ProjectSettingsDraft: Equatable {
     var baseRemote = AdminChoices.options.defaultBaseRemote
     var baseBranch = AdminChoices.options.defaultBaseBranch
     var deleteWorktreesOnArchive = false
+    /// Agent memory for the project's conversations.
+    var memoryEnabled = false
     var validationCommands: [ValidationCommandDraft] = []
 
     init() {}

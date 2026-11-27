@@ -1,0 +1,286 @@
+{
+  "date": "2026-11-27",
+  "machine": "Apple Silicon, macOS 27",
+  "openviking": "0.5.6 (PyPI, 2026-11-24), source 26dbce3",
+  "mode": "keyless: embedding local bge-small-zh-v1.5-f16 (llama-cpp-python 0.3.38), no VLM, auth_mode dev, loopback",
+  "install": {
+    "venvMB": 761,
+    "baseInstallSeconds": 11,
+    "llamaCppBuildSeconds": 52,
+    "llamaCppBuildCpuSeconds": 247,
+    "modelMB": 46,
+    "python": "3.12 via uv"
+  },
+  "runtime": {
+    "processes": 1,
+    "listener": "127.0.0.1 only",
+    "healthySeconds": 2,
+    "rssMB": {
+      "idle": 485,
+      "ingesting": "543-673"
+    },
+    "diskMBAt16kObservations": 228
+  },
+  "sessionPath": {
+    "create": 200,
+    "batch": 200,
+    "commit": 200,
+    "backgroundTask": "failed after 26 s: Missing credentials (OPENAI_API_KEY) \u2014 memory extraction, summaries and session context need a VLM",
+    "secondCommit": "accepted"
+  },
+  "resourcePath": {
+    "writeWaitMs": 1567,
+    "findExact": 200,
+    "findParaphrase": 200,
+    "searchFallsBackToVector": true,
+    "grep": 200
+  },
+  "replay": {
+    "mapping": "one Markdown file per observation under viking://resources/dieter/cards/<card>/",
+    "syncWaitMsPerObservation": "72-267",
+    "asyncEnqueueSeconds": 318,
+    "asyncEnqueuedObservations": 18365,
+    "embeddingDrainPerSecond": "8-9 falling to 4.6",
+    "embeddedAfter35Min": "~16k of 24k",
+    "semanticTasksStuck": 32,
+    "stoppedMeasuring": "2026-11-27T11:13Z"
+  },
+  "recallPartial": {
+    "eligibleCases": 8,
+    "note": "only cases whose card was embedded; fewer competing cards than the other layers faced",
+    "hitAt1": 5,
+    "hitAt3": 5,
+    "hitAt5": 8,
+    "mrr": 0.317,
+    "p50ms": 522,
+    "maxMs": 1207,
+    "sameEightCases": {
+      "openviking": {
+        "hit1": 5,
+        "hit3": 5,
+        "hit5": 8,
+        "mrr": 0.713
+      },
+      "builtin": {
+        "hit1": 5,
+        "hit3": 7,
+        "hit5": 7,
+        "mrr": 0.747
+      },
+      "agentmemoryBm25": {
+        "hit1": 6,
+        "hit3": 8,
+        "hit5": 8,
+        "mrr": 0.875
+      },
+      "agentmemoryHybrid": {
+        "hit1": 7,
+        "hit3": 7,
+        "hit5": 7,
+        "mrr": 0.875
+      }
+    },
+    "rows": [
+      {
+        "query": "Mac stays disconnected after waking from sleep",
+        "status": 200,
+        "rank": null,
+        "ms": 1207,
+        "top3": [
+          "c_110345b8db323582a785d65c",
+          "c_d41d7d280d689caeef578e1f",
+          "c_4bc088a8ee14bc855ffa1bc6"
+        ]
+      },
+      {
+        "query": "card snaps back to its old lane after dragging until sync finishes",
+        "status": 200,
+        "rank": 1,
+        "ms": 1071,
+        "top3": [
+          "c_f655dd266c6bf6aa379543df",
+          "c_5def4a1b1001ac17eec839bf",
+          "c_4bc088a8ee14bc855ffa1bc6"
+        ]
+      },
+      {
+        "query": "typing lag and lost characters in the Android chat composer",
+        "status": 200,
+        "rank": 4,
+        "ms": 416,
+        "top3": [
+          "c_be7db3bd76a55edc32e46551",
+          "c_430635f7cbcff66f819c54fc",
+          "c_a86c9cfda23f3832fa62d8a6"
+        ]
+      },
+      {
+        "query": "make the gateway unable to read relayed traffic",
+        "status": 200,
+        "rank": null,
+        "ms": 402,
+        "top3": [
+          "c_6a6c24215b4b15574f9e8ecc",
+          "c_4bc088a8ee14bc855ffa1bc6",
+          "c_d41d7d280d689caeef578e1f"
+        ]
+      },
+      {
+        "query": "store passwords and one-time codes that agents can request",
+        "status": 200,
+        "rank": null,
+        "ms": 449,
+        "top3": [
+          "c_430635f7cbcff66f819c54fc",
+          "c_30a95bc6b452a27db6712f01",
+          "c_110345b8db323582a785d65c"
+        ]
+      },
+      {
+        "query": "conversation fails but works again when I send another message",
+        "status": 200,
+        "rank": 5,
+        "ms": 443,
+        "top3": [
+          "c_cec40a0233947005efb4adfe",
+          "c_110345b8db323582a785d65c",
+          "c_a86c9cfda23f3832fa62d8a6"
+        ]
+      },
+      {
+        "query": "screen share should reconnect instead of opening new connections on a flaky network",
+        "status": 200,
+        "rank": 1,
+        "ms": 522,
+        "top3": [
+          "c_8c78397d41fe38c53be91c22",
+          "c_110345b8db323582a785d65c",
+          "c_430635f7cbcff66f819c54fc"
+        ]
+      },
+      {
+        "query": "presented file opens again every time I return to the chat",
+        "status": 200,
+        "rank": 4,
+        "ms": 452,
+        "top3": [
+          "c_36e66b736dc63012924ecc47",
+          "c_430635f7cbcff66f819c54fc",
+          "c_5def4a1b1001ac17eec839bf"
+        ]
+      },
+      {
+        "query": "notch covers the status badges in the top bar",
+        "status": 200,
+        "rank": null,
+        "ms": 453,
+        "top3": [
+          "c_110345b8db323582a785d65c",
+          "c_3fc6bf8294de8e0d0721d3ab",
+          "c_d41d7d280d689caeef578e1f"
+        ]
+      },
+      {
+        "query": "background waiters never come back in Claude and Oh My Pi",
+        "status": 200,
+        "rank": null,
+        "ms": 571,
+        "top3": [
+          "c_d41d7d280d689caeef578e1f",
+          "c_4bc088a8ee14bc855ffa1bc6",
+          "c_5def4a1b1001ac17eec839bf"
+        ]
+      },
+      {
+        "query": "quick task text disappears when opening more options on Android",
+        "status": 200,
+        "rank": null,
+        "ms": 676,
+        "top3": [
+          "c_430635f7cbcff66f819c54fc",
+          "c_36e66b736dc63012924ecc47",
+          "c_5def4a1b1001ac17eec839bf"
+        ]
+      },
+      {
+        "query": "do workflow runs or the repository leak credentials",
+        "status": 200,
+        "rank": null,
+        "ms": 570,
+        "top3": [
+          "c_6a6c24215b4b15574f9e8ecc",
+          "c_5def4a1b1001ac17eec839bf",
+          "c_4bc088a8ee14bc855ffa1bc6"
+        ]
+      },
+      {
+        "query": "deploy the gateway from the main repository instead of the vps repo",
+        "status": 200,
+        "rank": 1,
+        "ms": 741,
+        "top3": [
+          "c_6a6c24215b4b15574f9e8ecc",
+          "c_3fc6bf8294de8e0d0721d3ab",
+          "c_d41d7d280d689caeef578e1f"
+        ]
+      },
+      {
+        "query": "high CPU usage and slow clicks in the native Mac app",
+        "status": 200,
+        "rank": null,
+        "ms": 590,
+        "top3": [
+          "c_430635f7cbcff66f819c54fc",
+          "c_4bc088a8ee14bc855ffa1bc6",
+          "c_5def4a1b1001ac17eec839bf"
+        ]
+      },
+      {
+        "query": "move business rules into one shared Kotlin multiplatform layer",
+        "status": 200,
+        "rank": 1,
+        "ms": 555,
+        "top3": [
+          "c_110345b8db323582a785d65c",
+          "c_3fc6bf8294de8e0d0721d3ab",
+          "c_430635f7cbcff66f819c54fc"
+        ]
+      },
+      {
+        "query": "right click to delete a board on macOS",
+        "status": 200,
+        "rank": null,
+        "ms": 269,
+        "top3": [
+          "c_a86c9cfda23f3832fa62d8a6",
+          "c_f655dd266c6bf6aa379543df",
+          "c_110345b8db323582a785d65c"
+        ]
+      },
+      {
+        "query": "why are builds and emulator tests so slow",
+        "status": 200,
+        "rank": 1,
+        "ms": 493,
+        "top3": [
+          "c_430635f7cbcff66f819c54fc",
+          "c_5def4a1b1001ac17eec839bf",
+          "c_30a95bc6b452a27db6712f01"
+        ]
+      },
+      {
+        "query": "remove board comments from the daemon and every client",
+        "status": 200,
+        "rank": null,
+        "ms": 441,
+        "top3": [
+          "c_2005675a3f73cb66cf322f47",
+          "c_4bc088a8ee14bc855ffa1bc6",
+          "c_8c78397d41fe38c53be91c22"
+        ]
+      }
+    ]
+  },
+  "license": "AGPL-3.0 main project; README forbids wholesale rewriting/re-open-sourcing and translation without Volcano Engine's written permission",
+  "codexOAuth": "openai-codex VLM provider imports or creates a Codex login (second refresher; conflicts with Dieter's single-refresher invariant)"
+}

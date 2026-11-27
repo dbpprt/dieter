@@ -92,7 +92,8 @@ struct SidebarProjectRow: View, Equatable {
                     store.presentNewBoard(projectID: project.id)
                 }
 
-                if hovering {
+                // E2E flows press controls without hovering: keep these reachable.
+                if hovering || NativeTestSupport.isE2E {
                     Button {
                         store.presentProjectEditor(projectID: project.id)
                     } label: {

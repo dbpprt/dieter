@@ -38,6 +38,7 @@ func protoState(value model.State) *dieterv1.State {
 func protoProject(value model.Project) *dieterv1.Project {
 	result := &dieterv1.Project{
 		DeleteWorktreesOnArchive: value.DeleteWorktreesOnArchive,
+		MemoryEnabled:            value.MemoryEnabled,
 		Id:                       value.ID, Name: value.Name, Path: value.Path, Summary: value.Summary, ConflictKeys: value.ConflictKeys,
 		Prompt: value.Prompt, Archived: value.Archived, CreatedAt: value.CreatedAt,
 		UpdatedAt: value.UpdatedAt, BoardCount: int32(value.BoardCount),
@@ -111,7 +112,7 @@ func protoCard(value model.Card) *dieterv1.Card {
 		LabelIds: append([]string(nil), value.LabelIDs...), ResponseSeq: value.ResponseSeq, ResponseMessageId: value.ResponseMessageID, SeenResponseSeq: value.SeenResponseSeq,
 		WorkspaceMode: value.WorkspaceMode, WorkspaceBranch: value.WorkspaceBranch, WorkspaceBaseBranch: value.WorkspaceBaseBranch,
 		WorkspaceBaseRemote: value.WorkspaceBaseRemote, RemotePublishMode: value.RemotePublishMode, VaultAccess: value.VaultAccess, MailAccess: value.MailAccess,
-		CodeReview: value.CodeReview,
+		CodeReview: value.CodeReview, Memory: value.Memory, MemoryRole: value.MemoryRole,
 	}
 	for _, field := range value.StateFields {
 		projected := &dieterv1.CardStateField{Name: field.Name, Revision: field.Revision}

@@ -220,6 +220,17 @@ class OutboxPolicyTest {
                 )
             }
         assertTrue(OutboxPolicy.optimisticCard(reviewed)!!.code_review, "the reviewer switch")
+        assertFalse(card.memory, "absent follows the project, which the daemon decides")
+        val remembering =
+            create("5").let { entry ->
+                val request = CreateConversationRequest.ADAPTER.decode(entry.request)
+                entry.copy(
+                    request =
+                        CreateConversationRequest.ADAPTER.encode(request.copy(memory = true))
+                            .toByteString()
+                )
+            }
+        assertTrue(OutboxPolicy.optimisticCard(remembering)!!.memory, "the memory switch")
     }
 
     private fun metadata(at: Instant) = "{\"createdAt\":\"$at\"}".encodeUtf8()

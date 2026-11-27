@@ -50,8 +50,8 @@ func conversationInput(request *dieterv1.CreateConversationRequest) (engine.Card
 		WorkspaceMode: workspaceMode, WorkspaceBranch: request.GetWorkspaceBranch(),
 		WorkspaceBaseBranch: request.GetWorkspaceBaseBranch(), WorkspaceBaseRemote: request.GetWorkspaceBaseRemote(),
 		RemotePublishMode: request.GetRemotePublishMode(), VaultAccess: request.GetVaultAccess(), MailAccess: request.GetMailAccess(),
-		CodeReview: request.GetCodeReview(),
-		AccountID:  strings.TrimSpace(request.GetAccountId()),
+		CodeReview: request.GetCodeReview(), Memory: request.Memory,
+		AccountID: strings.TrimSpace(request.GetAccountId()),
 	}, nil
 }
 

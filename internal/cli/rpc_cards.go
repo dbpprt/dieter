@@ -38,6 +38,7 @@ Actions:
   review       Review the card's changes with the code reviewer
   reviews      List the card's code reviews, or show one
   reviewer     Switch the card's code reviewer on or off
+  memory       Switch the card's agent memory on or off
   read         Mark a displayed model response as seen
   rename       Rename a card
   update       Update the title, or a draft's task brief and agent settings
@@ -55,8 +56,8 @@ const chatHelp = `Usage: dieter chat <action>
 
 Actions:
   create, list, show, context, transcript, poll, watch, tool-output, send,
-  queue, cancel, present, review, reviews, reviewer, read, rename, update,
-  fork, archive, unarchive, workspace, pin, unpin
+  queue, cancel, present, review, reviews, reviewer, memory, read, rename,
+  update, fork, archive, unarchive, workspace, pin, unpin
 
 A standalone chat is a conversation without a board: it has no lanes or labels
 and starts when created. Actions take the same options as their card versions
@@ -113,6 +114,8 @@ func (c *CLI) rpcCard(args []string, chat bool) error {
 		return c.rpcCardReviews(args[1:])
 	case "reviewer":
 		return c.rpcCardReviewer(args[1:])
+	case "memory":
+		return c.rpcCardMemory(args[1:])
 	case "fork":
 		return c.rpcCardFork(args[1:])
 	case "send":
@@ -214,6 +217,8 @@ Options:
   --code-review             Give this conversation's agent turns the code
                             reviewer (switch later with dieter card reviewer;
                             see dieter reviewer --help)
+  --memory on|off           Agent memory for this conversation (default: the
+                            project's setting; see dieter memory --help)
   --format json|id          Output format
 
 Destination defaults to the running local daemon. Pass global --machine ID|NAME
@@ -251,6 +256,7 @@ before the command to create on another enrolled machine.
 	vaultAccess := set.Bool("vault", false, "grant agent turns access to the account vault")
 	mailAccess := set.Bool("mail", false, "let agent turns send the user mail")
 	codeReview := set.Bool("code-review", false, "give agent turns the code reviewer")
+	memorySwitch := set.String("memory", "", "on or off (default: the project's setting)")
 	format := set.String("format", "json", "json or id")
 	help, err := parse(set, args, c.scoped(usage), c.Out)
 	if help || err != nil {
@@ -306,6 +312,15 @@ before the command to create on another enrolled machine.
 		WorkspaceBranch: *branch, WorkspaceBaseBranch: *baseBranch, AutoGenerateTitle: *autoTitle,
 		WorkspaceBaseRemote: *baseRemote, RemotePublishMode: *remotePublish, VaultAccess: *vaultAccess, MailAccess: *mailAccess,
 		CodeReview: *codeReview,
+	}
+	switch strings.TrimSpace(*memorySwitch) {
+	case "":
+	case "on":
+		request.Memory = &[]bool{true}[0]
+	case "off":
+		request.Memory = &[]bool{false}[0]
+	default:
+		return errors.New("--memory must be on or off")
 	}
 	client, rpcCtx, err := c.rpc(ctx)
 	if err != nil {

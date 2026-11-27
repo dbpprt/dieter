@@ -15,6 +15,7 @@ import (
 	"github.com/dbpprt/dieter/internal/harness"
 	hostfolders "github.com/dbpprt/dieter/internal/host/folders"
 	"github.com/dbpprt/dieter/internal/host/machine"
+	hostmemory "github.com/dbpprt/dieter/internal/host/memory"
 	"github.com/dbpprt/dieter/internal/host/remoteexec"
 	"github.com/dbpprt/dieter/internal/host/terminal"
 	"github.com/dbpprt/dieter/internal/platform/config"
@@ -40,6 +41,9 @@ type ServiceOptions struct {
 	// nil when not enrolled. FolderTrusted reports roster membership.
 	FolderPeers   hostfolders.Dialer
 	FolderTrusted func(daemonID string) bool
+	// MemoryPeers reaches the other daemons of the account for recall across
+	// machines; nil when not enrolled.
+	MemoryPeers hostmemory.Dialer
 	// Name is this machine's enrolled name, also used in provider account
 	// messages.
 	Name string
@@ -60,6 +64,7 @@ type Services struct {
 	Executions    *remoteexec.Manager
 	RemoteDesktop *remotedesktop.Manager
 	Folders       *hostfolders.Engine
+	Memory        *hostmemory.Service
 	Accounts      *accounts.Service
 	API           *api.Server
 	log           *slog.Logger
@@ -103,7 +108,12 @@ func NewServices(data *store.Store, logger *slog.Logger, options ServiceOptions)
 		}
 		return out
 	}
+	// Agent memory: finished turns of memory-enabled conversations are
+	// indexed, and their agents recall and save through the memory hooks.
+	memory := hostmemory.New(hostmemory.Options{Store: data, App: application, Log: logger, Name: options.Name, Dial: options.MemoryPeers})
+	application.Memory = memory
 	services := &Services{
+		Memory:    memory,
 		Folders:   folders,
 		Store:     data,
 		App:       application,
@@ -121,7 +131,7 @@ func NewServices(data *store.Store, logger *slog.Logger, options ServiceOptions)
 		App: application, Schedules: services.Schedules, Terminals: services.Terminals,
 		Executions: services.Executions, Machine: machine.NewCollector(data.Root),
 		Catalog: catalog, MinimumFreeBytes: options.Env.MinimumFreeBytes, DaemonState: options.DaemonState,
-		Trust: options.Trust, Folders: folders, Accounts: providerAccounts,
+		Trust: options.Trust, Folders: folders, Accounts: providerAccounts, Memory: memory,
 	})
 	return services
 }
@@ -255,6 +265,12 @@ func (s *Services) Serve(ctx context.Context, listener net.Listener, activating 
 		s.Folders.Run(ctx)
 	}()
 	defer func() { <-foldersDone }()
+	memoryDone := make(chan struct{})
+	go func() {
+		defer close(memoryDone)
+		s.Memory.Run(ctx)
+	}()
+	defer func() { <-memoryDone }()
 	httpServer := &http.Server{Addr: addr, Handler: s.API.Handler(), Protocols: api.LoopbackProtocols(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 1 << 20}
 	logger.Info("Dieter daemon is ready", "url", fmt.Sprintf("http://%s", addr), "store", s.Store.Root)
 	serveErr := make(chan error, 1)
