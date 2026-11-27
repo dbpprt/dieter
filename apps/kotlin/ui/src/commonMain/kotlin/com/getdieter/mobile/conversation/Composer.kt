@@ -307,9 +307,7 @@ internal fun SendButton(
         contentAlignment = Alignment.Center,
     ) {
         Box(
-            Modifier.size(size)
-                .popOnChange(enabled && !apple, from = .78f)
-                .background(container, CircleShape),
+            Modifier.size(size).background(container, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
             if (loading) Spinner(Modifier.size(size * .55f), color = content)
@@ -511,13 +509,11 @@ private fun FloatingComposer(
                 if (model.pendingTools.isNotEmpty())
                     FloatingChip(model.pendingTools, Glyph.HOURGLASS, backdrop, glass)
             }
-        val working = state?.working == true
         Column(
             Modifier.padding(horizontal = 10.dp)
                 .fillMaxWidth()
                 .then(card)
                 .border(if (focused) 1.5.dp else 1.dp, outline, shape)
-                .workingGlow(working && !focused, shape, colors.primary)
                 .testTag("composer-card")
         ) {
             if (attachments.isNotEmpty())

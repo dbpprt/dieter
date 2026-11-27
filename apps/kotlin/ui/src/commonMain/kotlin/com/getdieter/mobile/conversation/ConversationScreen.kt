@@ -429,7 +429,6 @@ private fun Transcript(
                             UnsentTask(store, task, state.can_start, busy, openUrl)
                         }
                     }
-                val lastId = view.timeline.lastOrNull()?.id
                 items(view.timeline, key = { it.id }) { row ->
                     Box(
                         Modifier.animateItem(
@@ -447,7 +446,6 @@ private fun Transcript(
                             onCopy = {
                                 clipboard.setText(AnnotatedString(rowText(row, view)))
                             },
-                            live = state?.working == true && row.id == lastId && !row.user,
                         )
                     }
                 }

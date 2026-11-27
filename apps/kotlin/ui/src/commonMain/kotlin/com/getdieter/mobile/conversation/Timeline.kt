@@ -47,10 +47,7 @@ import com.getdieter.mobile.app.*
 import com.getdieter.mobile.channels.PeerNoticeCard
 import com.getdieter.mobile.design.*
 
-/**
- * One row of the transcript. [live] marks the agent row the running turn is still writing: its
- * activity disclosure pulses and its thinking label shimmers.
- */
+/** One row of the transcript. */
 @Composable
 internal fun TimelineRow(
     row: TimelineItem,
@@ -59,11 +56,10 @@ internal fun TimelineRow(
     onAttachment: (MessagePart) -> Unit,
     onTool: (TimelineStep) -> Unit,
     onCopy: () -> Unit,
-    live: Boolean = false,
 ) {
     var expanded by rememberSaveable(row.id) { mutableStateOf(false) }
     if (row.activity && !expanded) {
-        ActivitySummaryRow(row.summary, false, live) { expanded = true }
+        ActivitySummaryRow(row.summary, false) { expanded = true }
         return
     }
     if (row.user) {
@@ -102,13 +98,13 @@ internal fun TimelineRow(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             if (row.activity)
-                ActivitySummaryRow(row.summary, true, live, padded = false) { expanded = false }
+                ActivitySummaryRow(row.summary, true, padded = false) { expanded = false }
             row.groups.forEach { group ->
                 var open by rememberSaveable(group.id) { mutableStateOf(false) }
                 if (group.activity && !row.activity)
-                    ActivitySummaryRow(group.summary, open, live, padded = false) { open = !open }
+                    ActivitySummaryRow(group.summary, open, padded = false) { open = !open }
                 if (!group.activity || open || row.activity)
-                    StepList(group.steps, row, view, live, openUrl, onAttachment, onTool)
+                    StepList(group.steps, row, view, openUrl, onAttachment, onTool)
             }
             view.conversation
                 ?.task_plans
@@ -128,7 +124,6 @@ private fun StepList(
     steps: List<TimelineStep>,
     row: TimelineItem,
     view: ConversationSlice,
-    live: Boolean,
     openUrl: (String) -> Unit,
     onAttachment: (MessagePart) -> Unit,
     onTool: (TimelineStep) -> Unit,
@@ -146,7 +141,7 @@ private fun StepList(
             index = end + 1
             continue
         }
-        TimelineStepView(step, row, view, live && index == steps.lastIndex, openUrl, onAttachment)
+        TimelineStepView(step, row, view, openUrl, onAttachment)
         index++
     }
 }
@@ -156,7 +151,6 @@ private fun TimelineStepView(
     step: TimelineStep,
     row: TimelineItem,
     view: ConversationSlice,
-    live: Boolean,
     openUrl: (String) -> Unit,
     onAttachment: (MessagePart) -> Unit,
 ) {
@@ -165,7 +159,7 @@ private fun TimelineStepView(
     val text = step.text.ifEmpty { part?.text.orEmpty() }
     when (step.kind) {
         TimelineStepKind.TIMELINE_STEP_KIND_REASONING ->
-            if (text.isNotBlank()) ReasoningRow(step.id, text, live)
+            if (text.isNotBlank()) ReasoningRow(step.id, text)
         TimelineStepKind.TIMELINE_STEP_KIND_SUBAGENTS ->
             view.conversation
                 ?.subagents
@@ -186,7 +180,7 @@ private fun TimelineStepView(
 
 /** The agent's reasoning behind a "Thinking" disclosure; open by default, so nothing is lost. */
 @Composable
-private fun ReasoningRow(id: String, text: String, live: Boolean) {
+private fun ReasoningRow(id: String, text: String) {
     var open by rememberSaveable(id) { mutableStateOf(true) }
     val secondary = palette.secondaryLabel
     Column(Modifier.fillMaxWidth()) {
@@ -199,11 +193,10 @@ private fun ReasoningRow(id: String, text: String, live: Boolean) {
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Icon(Glyph.BRAIN, null, tint = secondary, size = 14.dp, weight = GlyphWeight.MEDIUM)
-            val label = type.footnote.copy(fontWeight = FontWeight.SemiBold)
             Text(
                 "Thinking",
-                style = if (live) label.shimmer(secondary, palette.label) else label,
-                color = if (live) Color.Unspecified else secondary,
+                style = type.footnote.copy(fontWeight = FontWeight.SemiBold),
+                color = secondary,
             )
             DisclosureChevron(open)
         }
@@ -379,7 +372,6 @@ private fun userBubbleBrush(): Brush {
 private fun ActivitySummaryRow(
     summary: String,
     open: Boolean,
-    live: Boolean,
     padded: Boolean = true,
     toggle: () -> Unit,
 ) {
@@ -396,11 +388,7 @@ private fun ActivitySummaryRow(
             .semantics { contentDescription = (if (open) "Hide " else "Show ") + summary },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (live)
-            Pulse(palette.accent, 18.dp) {
-                Icon(Glyph.SPARKLES, null, tint = palette.accent, size = 14.dp)
-            }
-        else Icon(Glyph.SPARKLES, null, tint = tint, size = 14.dp)
+        Icon(Glyph.SPARKLES, null, tint = tint, size = 14.dp)
         Spacer(Modifier.width(7.dp))
         Text(
             summary.ifEmpty { "Agent activity" },

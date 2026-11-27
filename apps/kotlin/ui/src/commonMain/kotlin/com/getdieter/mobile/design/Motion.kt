@@ -6,25 +6,18 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.drawOutline
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 // The shell's motion: one set of springs, the transitions between routes and panes, and a few
-// small live effects (press scale, the working glow, text shimmer, typing dots). Everything here
-// is presentation only.
+// small live effects (press scale, pops, text shimmer, typing dots). Everything here is
+// presentation only.
 
 /** The springs every animated surface shares, so motion feels like one material. */
 internal object Motion {
@@ -127,92 +120,6 @@ internal fun Modifier.popOnChange(trigger: Any?, from: Float = .82f): Modifier {
     }
 }
 
-/**
- * Color stops of a sweep whose bright [highlight] sits at [position] (0–1 around the circle) and
- * fades into [base] over [width] on either side, wrapped so the ring has no seam.
- */
-internal fun sweepStops(
-    position: Float,
-    highlight: Color,
-    base: Color,
-    width: Float = .18f,
-): Array<Pair<Float, Color>> {
-    val center = ((position % 1f) + 1f) % 1f
-    val points = mutableListOf(0f to base, 1f to base)
-    fun add(at: Float, color: Color) {
-        when {
-            at < 0f -> {
-                points.add(at + 1f to color)
-                points.add(0f to lerpColor(base, highlight, 1f - (-at / width)))
-            }
-            at > 1f -> {
-                points.add(at - 1f to color)
-                points.add(1f to lerpColor(base, highlight, 1f - ((at - 1f) / width)))
-            }
-            else -> points.add(at to color)
-        }
-    }
-    add(center - width, base)
-    add(center, highlight)
-    add(center + width, base)
-    // Two stops at 0 or 1 keep the brighter one, so the seam is continuous.
-    val merged =
-        points
-            .groupBy { (it.first * 10_000).toInt() }
-            .map { (_, group) -> group.maxBy { it.second.alpha } }
-            .sortedBy { it.first }
-    return merged.toTypedArray()
-}
-
-private fun lerpColor(a: Color, b: Color, t: Float) =
-    androidx.compose.ui.graphics.lerp(a, b, t.coerceIn(0f, 1f))
-
-/**
- * A soft light travelling along the outline while [active]: the way the composer shows that the
- * agent is working on what was sent. Nothing is drawn when idle.
- */
-@Composable
-internal fun Modifier.workingGlow(
-    active: Boolean,
-    shape: Shape,
-    color: Color,
-    width: Dp = 2.dp,
-): Modifier {
-    val alpha by animateFloatAsState(if (active) 1f else 0f, tween(400), label = "glow-alpha")
-    if (alpha <= 0f) return this
-    val transition = rememberInfiniteTransition(label = "glow")
-    val turn by
-        transition.animateFloat(
-            0f,
-            1f,
-            infiniteRepeatable(tween(2600, easing = LinearEasing)),
-            label = "glow-turn",
-        )
-    return drawWithCache {
-        val outline = shape.createOutline(size, layoutDirection, this)
-        val stroke = Stroke(width.toPx())
-        onDrawWithContent {
-            drawContent()
-            val stops =
-                sweepStops(
-                    turn,
-                    color.copy(alpha = color.alpha * alpha),
-                    color.copy(alpha = .08f * alpha),
-                    width = .22f,
-                )
-            val second =
-                sweepStops(
-                    turn + .5f,
-                    color.copy(alpha = color.alpha * .55f * alpha),
-                    Color.Transparent,
-                    width = .12f,
-                )
-            drawOutline(outline, Brush.sweepGradient(*stops, center = center), style = stroke)
-            drawOutline(outline, Brush.sweepGradient(*second, center = center), style = stroke)
-        }
-    }
-}
-
 /** A text style whose glyphs carry a sweeping highlight, for live status lines. */
 @Composable
 internal fun TextStyle.shimmer(base: Color, highlight: Color): TextStyle {
@@ -267,37 +174,3 @@ internal fun TypingDots(color: Color, modifier: Modifier = Modifier, size: Dp = 
         }
     }
 }
-
-/** A pulsing ring around content, e.g. a sparkle that marks a turn in progress. */
-@Composable
-internal fun Pulse(
-    color: Color,
-    size: Dp,
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit,
-) {
-    val transition = rememberInfiniteTransition(label = "pulse")
-    val t by
-        transition.animateFloat(
-            0f,
-            1f,
-            infiniteRepeatable(tween(1400, easing = FastOutSlowInEasing)),
-            label = "pulse-t",
-        )
-    Box(modifier.size(size), contentAlignment = Alignment.Center) {
-        Box(
-            Modifier.size(size)
-                .graphicsLayer {
-                    val s = .7f + .5f * t
-                    scaleX = s
-                    scaleY = s
-                    this.alpha = (1f - t) * .35f
-                }
-                .then(Modifier.drawWithCache { onDrawBehind { drawCircle(color) } })
-        )
-        content()
-    }
-}
-
-/** [CircleShape] re-exported for callers of [workingGlow] that want a pill. */
-internal val PillShape: Shape = CircleShape

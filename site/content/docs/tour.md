@@ -155,7 +155,7 @@ A task conversation shows the same reply, tool activity, and plan as on Mac,
 and exposes its **Changes** and **Subagents**. On Android, a run of tool calls
 is one card that names each call and shows whether it is running, done or
 failed, the agent's reasoning sits behind **Thinking**, and while the agent
-works its activity line shimmers and the message field glows; scroll away
+works its activity line shimmers; scroll away
 during a turn and a **New output** pill brings you back. A standalone chat
 stays separate from the board. Messages sent during an active turn join its
 queue; closing the app leaves the host working.

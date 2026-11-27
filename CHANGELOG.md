@@ -8,7 +8,11 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ## Unreleased
 
-Nothing yet.
+### Changed
+
+- Android: the message field no longer glows while the agent works, the send
+  button no longer pops, and the activity chip and **Thinking** label of the
+  running turn keep still.
 
 ## 0.7.454
 
