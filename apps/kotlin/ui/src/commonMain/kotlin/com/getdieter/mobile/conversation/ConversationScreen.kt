@@ -142,6 +142,23 @@ private fun conversationMenu(
             }
         )
     }
+    // The agent's reviewer applies from its next turn.
+    val reviewer =
+        view.state?.code_review?.let {
+            MenuSection(
+                listOf(
+                    ChromeAction(
+                        "code-review-switch",
+                        "Code review",
+                        Glyph.EYE,
+                        enabled = it.can_toggle,
+                        checked = it.enabled,
+                    ) {
+                        store.conversation.setCodeReview(!it.enabled)
+                    }
+                )
+            )
+        }
     val organize =
         card
             ?.let {
@@ -152,7 +169,7 @@ private fun conversationMenu(
                 ) + cardMenuSections(store, it).drop(1)
             }
             .orEmpty()
-    return listOf(MenuSection(panes), MenuSection(agent)) + organize
+    return listOfNotNull(MenuSection(panes), MenuSection(agent), reviewer) + organize
 }
 
 @Composable

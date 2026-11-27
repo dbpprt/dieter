@@ -1,0 +1,36 @@
+{
+  "summary": "Adds support for worktrees in empty repositories (orphan branches with no base commit): the first local merge initializes the base branch, changeset history and root-commit diffs work without a base, and cleanup skips deleting a branch that was never created. The uncommitted edits on top of the commit change the repository lock in provisioning, the check that decides a branch has no commits yet, and the safety check that runs before the first merge.",
+  "findings": [
+    {
+      "file": "internal/git/workspace/manager.go",
+      "start_line": 178,
+      "end_line": 184,
+      "severity": "high",
+      "confidence": 10,
+      "title": "Repository lock leaked during worktree provisioning",
+      "body": "provision takes the repository lock for worktree mode, then throws the release function away with `_ = release` (it used to be `defer release()`). The lock is a directory under runtime/git-locks, and a goroutine refreshes its mtime every 15s until release runs, so the 2-minute stale-reclaim never fires. After the first worktree is provisioned in a project, every later LockRepository call on that repository loops until its context ends: provisioning another worktree, mergeLocal, and any other caller. Callers that use context.Background() hang forever. TestEmptyRepositoryWorkspaces (second iteration), TestUnbornWorktreesCreatedAroundFirstCommit and every merge_local test in empty_test.go deadlock. In production, all worktree creation and local merges for the repository stop until the daemon restarts.",
+      "suggestion": "Restore `defer release()` right after acquiring the lock."
+    },
+    {
+      "file": "internal/git/operations/manager.go",
+      "start_line": 1040,
+      "end_line": 1052,
+      "severity": "high",
+      "confidence": 9,
+      "title": "Initial-checkout guard lets Git delete ignored data",
+      "body": "The check changed from `i == len(parts)-1 || !info.IsDir()` to `&&`. Two cases are no longer refused: (1) an existing directory where the incoming tree has a file, and (2) a symlink ancestor (or other non-directory ancestor) whose target doesn't contain the file. The function comment says Git's unborn merge overwrites ignored paths even with --no-overwrite-ignore, and I confirmed it with Git 2.54. Setup: the tree contains `build` and `nested/file.txt`; the operator's empty checkout has an ignored `build/` directory holding `data.txt` and an ignored symlink `nested -> /elsewhere`. `git merge --no-overwrite-ignore --ff-only <sha>` succeeded silently, deleted `build/data.txt`, and replaced the symlink with a directory. With `&&`, checkInitialCheckout passes both cases, so the first local integration destroys user data in the operator's checkout. That contradicts the documented promise that the first integration never overwrites existing files, including ignored ones. The existing tests don't catch it because their cases collide on a regular file.",
+      "suggestion": "Restore `if i == len(parts)-1 || !info.IsDir() {`, so any existing final path and any non-directory ancestor are refused."
+    },
+    {
+      "file": "internal/git/unborn.go",
+      "start_line": 22,
+      "end_line": 30,
+      "severity": "medium",
+      "confidence": 8,
+      "title": "Any rev-parse failure is treated as unborn",
+      "body": "`command.ExitCode == 1` became `!= 0`. `rev-parse --verify --quiet` exits 1 only when the ref is missing. Exit 128 means a fatal error such as a corrupt ref store or packed-refs, and -1 means the process was killed by a signal (for example the OOM killer, not a context cancel). Both now report the branch as having no commits instead of returning the error, which is the opposite of the function's stated contract. In provision, a fatal read error on the base branch then creates an `--orphan` worktree with no history and an empty BaseSHA in a repository that has commits. Later merges for that worktree pass --allow-unrelated-histories, and mergeLocal can take the initial-integration path. The `corrupt` case (ExitCode 128) in TestUnbornHeadDoesNotHideGitFailures now fails.",
+      "suggestion": "Restore `command.ExitCode == 1`."
+    }
+  ],
+  "security_concerns": "Yes: the weakened check before the first merge lets the merge delete ignored files or directories and replace ignored symlinks in the operator's own checkout."
+}

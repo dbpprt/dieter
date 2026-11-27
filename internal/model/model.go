@@ -250,7 +250,10 @@ type Card struct {
 	VaultAccess bool `json:"vaultAccess,omitempty" yaml:"vault_access,omitempty"`
 	// MailAccess is owner-local and fixed at creation: agent turns of this
 	// conversation may send the user mail.
-	MailAccess  bool                `json:"mailAccess,omitempty" yaml:"mail_access,omitempty"`
+	MailAccess bool `json:"mailAccess,omitempty" yaml:"mail_access,omitempty"`
+	// CodeReview is owner-local and switchable at any time: agent turns of
+	// this conversation get Dieter's code reviewer (request_code_review).
+	CodeReview  bool                `json:"codeReview,omitempty" yaml:"code_review,omitempty"`
 	Workspace   *WorkspaceSummary   `json:"workspace,omitempty" yaml:"-"`
 	PullRequest *PullRequestSummary `json:"pullRequest,omitempty" yaml:"-"`
 }
@@ -562,6 +565,7 @@ type Schedule struct {
 	WorkspaceMode   string            `json:"workspaceMode" yaml:"workspace_mode"`
 	VaultAccess     bool              `json:"vaultAccess,omitempty" yaml:"vault_access,omitempty"`
 	MailAccess      bool              `json:"mailAccess,omitempty" yaml:"mail_access,omitempty"`
+	CodeReview      bool              `json:"codeReview,omitempty" yaml:"code_review,omitempty"`
 	LabelIDs        []string          `json:"labelIds,omitempty" yaml:"labels,omitempty"`
 	OpenCardPolicy  string            `json:"openCardPolicy" yaml:"open_card_policy"`
 	MisfirePolicy   string            `json:"misfirePolicy" yaml:"misfire_policy"`

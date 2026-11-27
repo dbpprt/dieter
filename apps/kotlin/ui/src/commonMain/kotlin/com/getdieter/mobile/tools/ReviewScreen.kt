@@ -62,6 +62,7 @@ internal fun ReviewScreen(store: MobileStore) {
                         Glyph.MORE_HORIZONTAL,
                         menu =
                             listOfNotNull(
+                                codeReviewSection(store, conversation),
                                 if (
                                     operations.isNotEmpty() ||
                                         view.availability?.allows_merge_flow == true
@@ -397,12 +398,33 @@ internal fun ReviewScreen(store: MobileStore) {
 }
 
 /**
+ * "Review changes": the code reviewer reviews the open conversation's changes now; one review at a
+ * time. Null until the conversation is known.
+ */
+private fun codeReviewSection(store: MobileStore, conversation: ConversationSlice): MenuSection? {
+    val reviewer = conversation.state?.code_review ?: return null
+    return MenuSection(
+        listOf(
+            ChromeAction(
+                "review-changes",
+                if (reviewer.running) "Reviewing changes…" else "Review changes",
+                Glyph.EYE,
+                enabled = reviewer.can_start,
+            ) {
+                store.conversation.reviewChanges()
+            }
+        )
+    )
+}
+
+/**
  * A project-directory conversation's Changes: its shared checkout, driven through the review so the
  * conversation never decides where its changes live.
  */
 @Composable
 private fun CheckoutReview(store: MobileStore, review: ReviewSlice) {
     val view = review.checkout ?: ProjectChangesSlice()
+    val conversation by store.conversation.slice.collectAsState()
     var operation by remember { mutableStateOf<String?>(null) }
     fun send(value: ProjectChangesCommand) =
         store.command(
@@ -430,7 +452,9 @@ private fun CheckoutReview(store: MobileStore, review: ReviewSlice) {
                         "changes-menu",
                         "Git actions",
                         Glyph.MORE_HORIZONTAL,
-                        menu = checkoutMenu(view, ::send) { operation = it },
+                        menu =
+                            listOfNotNull(codeReviewSection(store, conversation)) +
+                                checkoutMenu(view, ::send) { operation = it },
                     )
                 ),
         )

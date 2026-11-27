@@ -295,6 +295,18 @@ struct StandaloneChatStartView: View {
                 .accessibilityIdentifier("chats.new.mail-access")
                 .accessibilityValue(form.intent.mailAccess ? "Allowed" : "Not allowed")
                 .e2eTarget("chats.new.mail-access")
+                Toggle(isOn: $form.intent.codeReview) {
+                    Label("Review", systemImage: form.intent.codeReview ? "eye.fill" : "eye")
+                }
+                .toggleStyle(.button)
+                .help(
+                    "Let this chat's agent ask a separate reviewer model to check its changes. "
+                        + "Switch it later from the chat's menu."
+                )
+                .accessibilityLabel("Code review")
+                .accessibilityIdentifier("code-review")
+                .accessibilityValue(form.intent.codeReview ? "On" : "Off")
+                .e2eTarget("code-review")
                 Spacer(minLength: 0)
             }
             .font(.system(size: 11, weight: .medium))

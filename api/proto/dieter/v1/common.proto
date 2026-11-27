@@ -201,6 +201,9 @@ message Card {
   // Owner-local: the provider account (a provider-accounts KV key) of the
   // latest turn. Never a credential.
   string provider_account_id = 49;
+  // Agent turns get Dieter's code reviewer (ReviewService): owner-local,
+  // switchable at any time, effective from the next turn.
+  bool code_review = 50;
 }
 
 message CardOrigin {

@@ -431,6 +431,7 @@ func resolvePersistedSelection(catalog *harness.Catalog, providerID, modelID str
 // boundary. It is used only during graceful process shutdown; normal user
 // cancellation remains an interruption.
 func (s *Service) SuspendActiveTurns(ctx context.Context) error {
+	s.cancelCodeReviews()
 	s.mu.Lock()
 	s.shuttingDown = true
 	titleJobs := make([]*quickTitleJob, 0, len(s.quickTitleJobs))

@@ -537,6 +537,9 @@ public nonisolated enum ClientTimelineStepKind: SwiftProtobuf.Enum, Swift.CaseIt
 
   /// An agent channel message that joined the running turn. Never routine.
   case peerNotice // = 8
+
+  /// A code review (TimelineStep.code_review). Never routine.
+  case codeReview // = 9
   case UNRECOGNIZED(Int)
 
   public init() {
@@ -554,6 +557,7 @@ public nonisolated enum ClientTimelineStepKind: SwiftProtobuf.Enum, Swift.CaseIt
     case 6: self = .other
     case 7: self = .subagents
     case 8: self = .peerNotice
+    case 9: self = .codeReview
     default: self = .UNRECOGNIZED(rawValue)
     }
   }
@@ -569,6 +573,7 @@ public nonisolated enum ClientTimelineStepKind: SwiftProtobuf.Enum, Swift.CaseIt
     case .other: return 6
     case .subagents: return 7
     case .peerNotice: return 8
+    case .codeReview: return 9
     case .UNRECOGNIZED(let i): return i
     }
   }
@@ -584,6 +589,7 @@ public nonisolated enum ClientTimelineStepKind: SwiftProtobuf.Enum, Swift.CaseIt
     .other,
     .subagents,
     .peerNotice,
+    .codeReview,
   ]
 
 }
@@ -2287,6 +2293,15 @@ public nonisolated struct ClientCommand: Sendable {
     set {command = .providers(newValue)}
   }
 
+  /// The code reviewer; see CodeReviewCommand.
+  public var codeReview: ClientCodeReviewCommand {
+    get {
+      if case .codeReview(let v)? = command {return v}
+      return ClientCodeReviewCommand()
+    }
+    set {command = .codeReview(newValue)}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Command: Equatable, Sendable {
@@ -2373,6 +2388,8 @@ public nonisolated struct ClientCommand: Sendable {
     case folders(ClientFoldersCommand)
     /// Claude and ChatGPT accounts; see ProvidersCommand.
     case providers(ClientProvidersCommand)
+    /// The code reviewer; see CodeReviewCommand.
+    case codeReview(ClientCodeReviewCommand)
 
   }
 
@@ -2384,6 +2401,143 @@ public nonisolated struct ClientStep: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+/// The code reviewer: the account's reviewer setting, a conversation's
+/// switch, and reviews the user starts. Reviews themselves arrive as
+/// CODE_REVIEW timeline steps.
+public nonisolated struct ClientCodeReviewCommand: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var action: ClientCodeReviewCommand.OneOf_Action? = nil
+
+  /// Reads the reviewer setting from the machine (empty: the local or
+  /// first online machine); the result is reviewer_settings.
+  public var settings: ClientCodeReviewMachine {
+    get {
+      if case .settings(let v)? = action {return v}
+      return ClientCodeReviewMachine()
+    }
+    set {action = .settings(newValue)}
+  }
+
+  /// Saves the reviewer setting (compare-and-set on settings.revision); the
+  /// result is reviewer_settings.
+  public var updateSettings: ClientCodeReviewSettingsUpdate {
+    get {
+      if case .updateSettings(let v)? = action {return v}
+      return ClientCodeReviewSettingsUpdate()
+    }
+    set {action = .updateSettings(newValue)}
+  }
+
+  /// Switches a conversation's reviewer on its machine; the result is the
+  /// card.
+  public var setEnabled: ClientCodeReviewSwitch {
+    get {
+      if case .setEnabled(let v)? = action {return v}
+      return ClientCodeReviewSwitch()
+    }
+    set {action = .setEnabled(newValue)}
+  }
+
+  /// Starts reviewing a conversation's changes on its machine; the result is
+  /// code_review (running). The review then shows in the transcript.
+  public var start: ClientCodeReviewStart {
+    get {
+      if case .start(let v)? = action {return v}
+      return ClientCodeReviewStart()
+    }
+    set {action = .start(newValue)}
+  }
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public nonisolated enum OneOf_Action: Equatable, Sendable {
+    /// Reads the reviewer setting from the machine (empty: the local or
+    /// first online machine); the result is reviewer_settings.
+    case settings(ClientCodeReviewMachine)
+    /// Saves the reviewer setting (compare-and-set on settings.revision); the
+    /// result is reviewer_settings.
+    case updateSettings(ClientCodeReviewSettingsUpdate)
+    /// Switches a conversation's reviewer on its machine; the result is the
+    /// card.
+    case setEnabled(ClientCodeReviewSwitch)
+    /// Starts reviewing a conversation's changes on its machine; the result is
+    /// code_review (running). The review then shows in the transcript.
+    case start(ClientCodeReviewStart)
+
+  }
+
+  public init() {}
+}
+
+public nonisolated struct ClientCodeReviewMachine: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var daemonID: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct ClientCodeReviewSettingsUpdate: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var daemonID: String = String()
+
+  public var settings: DieterAPI.Dieter_V1_ReviewerSettings {
+    get {_settings ?? DieterAPI.Dieter_V1_ReviewerSettings()}
+    set {_settings = newValue}
+  }
+  /// Returns true if `settings` has been explicitly set.
+  public var hasSettings: Bool {self._settings != nil}
+  /// Clears the value of `settings`. Subsequent reads from it will return its default value.
+  public mutating func clearSettings() {self._settings = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _settings: DieterAPI.Dieter_V1_ReviewerSettings? = nil
+}
+
+public nonisolated struct ClientCodeReviewSwitch: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var cardID: String = String()
+
+  public var enabled: Bool = false
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct ClientCodeReviewStart: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var cardID: String = String()
+
+  public var focus: String = String()
+
+  /// "quick" or "thorough"; empty uses the setting.
+  public var depth: String = String()
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -3665,6 +3819,14 @@ public nonisolated struct ClientCreationIntent: @unchecked Sendable {
   public var mailAccess: Bool {
     get {_storage._mailAccess}
     set {_uniqueStorage()._mailAccess = newValue}
+  }
+
+  /// Give the conversation's agent turns the code reviewer (request_code_review).
+  /// Switchable later (CodeReviewCommand.set_enabled); never remembered
+  /// between forms.
+  public var codeReview: Bool {
+    get {_storage._codeReview}
+    set {_uniqueStorage()._codeReview = newValue}
   }
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
@@ -6245,6 +6407,24 @@ public nonisolated struct ClientResult: Sendable {
     set {result = .providerAccount(newValue)}
   }
 
+  /// The reviewer setting (CodeReviewCommand.settings, update_settings).
+  public var reviewerSettings: DieterAPI.Dieter_V1_ReviewerSettings {
+    get {
+      if case .reviewerSettings(let v)? = result {return v}
+      return DieterAPI.Dieter_V1_ReviewerSettings()
+    }
+    set {result = .reviewerSettings(newValue)}
+  }
+
+  /// A review a CodeReviewCommand.start started.
+  public var codeReview: DieterAPI.Dieter_V1_CodeReview {
+    get {
+      if case .codeReview(let v)? = result {return v}
+      return DieterAPI.Dieter_V1_CodeReview()
+    }
+    set {result = .codeReview(newValue)}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Result: Equatable, Sendable {
@@ -6318,6 +6498,10 @@ public nonisolated struct ClientResult: Sendable {
     case providerReset(ClientProviderResetOutcome)
     /// The account a ProvidersCommand.create added.
     case providerAccount(ClientProviderAccountRef)
+    /// The reviewer setting (CodeReviewCommand.settings, update_settings).
+    case reviewerSettings(DieterAPI.Dieter_V1_ReviewerSettings)
+    /// A review a CodeReviewCommand.start started.
+    case codeReview(DieterAPI.Dieter_V1_CodeReview)
 
   }
 
@@ -7997,11 +8181,58 @@ public nonisolated struct ClientConversationState: @unchecked Sendable {
   /// Clears the value of `providerNotice`. Subsequent reads from it will return its default value.
   public mutating func clearProviderNotice() {_uniqueStorage()._providerNotice = nil}
 
+  /// The conversation's code reviewer. Unset until the conversation's card is
+  /// known.
+  public var codeReview: ClientConversationCodeReview {
+    get {_storage._codeReview ?? ClientConversationCodeReview()}
+    set {_uniqueStorage()._codeReview = newValue}
+  }
+  /// Returns true if `codeReview` has been explicitly set.
+  public var hasCodeReview: Bool {_storage._codeReview != nil}
+  /// Clears the value of `codeReview`. Subsequent reads from it will return its default value.
+  public mutating func clearCodeReview() {_uniqueStorage()._codeReview = nil}
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 
   fileprivate var _storage = _StorageClass.defaultInstance
+}
+
+/// A conversation's code reviewer, for its header switch and the Changes
+/// pane's "Review changes" action.
+public nonisolated struct ClientConversationCodeReview: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// The agent gets request_code_review from its next turn.
+  public var enabled: Bool = false
+
+  /// The switch can change it: the conversation is known and not archived.
+  public var canToggle: Bool = false
+
+  /// A review of this conversation is running (its latest review part).
+  public var running: Bool = false
+
+  /// "Review changes" can start a review now: nothing is running.
+  public var canStart: Bool = false
+
+  /// The latest review, when there is one.
+  public var latest: ClientTimelineCodeReview {
+    get {_latest ?? ClientTimelineCodeReview()}
+    set {_latest = newValue}
+  }
+  /// Returns true if `latest` has been explicitly set.
+  public var hasLatest: Bool {self._latest != nil}
+  /// Clears the value of `latest`. Subsequent reads from it will return its default value.
+  public mutating func clearLatest() {self._latest = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _latest: ClientTimelineCodeReview? = nil
 }
 
 public nonisolated struct ClientProviderNotice: Sendable {
@@ -8183,11 +8414,182 @@ public nonisolated struct ClientTimelineStep: Sendable {
   /// Clears the value of `peerNotice`. Subsequent reads from it will return its default value.
   public mutating func clearPeerNotice() {self._peerNotice = nil}
 
+  /// A CODE_REVIEW step's review.
+  public var codeReview: ClientTimelineCodeReview {
+    get {_codeReview ?? ClientTimelineCodeReview()}
+    set {_codeReview = newValue}
+  }
+  /// Returns true if `codeReview` has been explicitly set.
+  public var hasCodeReview: Bool {self._codeReview != nil}
+  /// Clears the value of `codeReview`. Subsequent reads from it will return its default value.
+  public mutating func clearCodeReview() {self._codeReview = nil}
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 
   fileprivate var _peerNotice: ClientTimelinePeerNotice? = nil
+  fileprivate var _codeReview: ClientTimelineCodeReview? = nil
+}
+
+/// A code review in the transcript: a data-code-review part (the JSON form of
+/// dieter.v1.CodeReview), laid out by the core. The agent's
+/// request_code_review tool call it answers is not a step of its own.
+public nonisolated struct ClientTimelineCodeReview: @unchecked Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var reviewID: String {
+    get {_storage._reviewID}
+    set {_uniqueStorage()._reviewID = newValue}
+  }
+
+  /// "running", "completed", "failed" or "cancelled".
+  public var status: String {
+    get {_storage._status}
+    set {_uniqueStorage()._status = newValue}
+  }
+
+  public var running: Bool {
+    get {_storage._running}
+    set {_uniqueStorage()._running = newValue}
+  }
+
+  /// "Code review", "Reviewing changes…", "Code review failed".
+  public var title: String {
+    get {_storage._title}
+    set {_uniqueStorage()._title = newValue}
+  }
+
+  /// "Claude Code · opus · quick · 42 s · 224k tokens".
+  public var subtitle: String {
+    get {_storage._subtitle}
+    set {_uniqueStorage()._subtitle = newValue}
+  }
+
+  /// "4 findings · 2 high", "No findings", "No changes to review".
+  public var countsLabel: String {
+    get {_storage._countsLabel}
+    set {_uniqueStorage()._countsLabel = newValue}
+  }
+
+  /// "Round 2 · 2 resolved · 1 still open · 1 new"; empty for a first review.
+  public var roundLabel: String {
+    get {_storage._roundLabel}
+    set {_uniqueStorage()._roundLabel = newValue}
+  }
+
+  /// "Requested by the agent" or "Requested by you".
+  public var triggerLabel: String {
+    get {_storage._triggerLabel}
+    set {_uniqueStorage()._triggerLabel = newValue}
+  }
+
+  /// The reviewer's summary of the change.
+  public var summary: String {
+    get {_storage._summary}
+    set {_uniqueStorage()._summary = newValue}
+  }
+
+  /// The security concern; empty when the reviewer saw none.
+  public var security: String {
+    get {_storage._security}
+    set {_uniqueStorage()._security = newValue}
+  }
+
+  /// Why a failed review failed.
+  public var error: String {
+    get {_storage._error}
+    set {_uniqueStorage()._error = newValue}
+  }
+
+  /// Most severe first.
+  public var findings: [ClientTimelineCodeReviewFinding] {
+    get {_storage._findings}
+    set {_uniqueStorage()._findings = newValue}
+  }
+
+  /// Findings of the previous review that are gone.
+  public var resolved: [ClientTimelineCodeReviewFinding] {
+    get {_storage._resolved}
+    set {_uniqueStorage()._resolved = newValue}
+  }
+
+  /// "high", "medium", "low", or empty without findings.
+  public var highestSeverity: String {
+    get {_storage._highestSeverity}
+    set {_uniqueStorage()._highestSeverity = newValue}
+  }
+
+  public var startedAtMillis: Int64 {
+    get {_storage._startedAtMillis}
+    set {_uniqueStorage()._startedAtMillis = newValue}
+  }
+
+  public var finishedAtMillis: Int64 {
+    get {_storage._finishedAtMillis}
+    set {_uniqueStorage()._finishedAtMillis = newValue}
+  }
+
+  /// "12 files · +340 −41".
+  public var changeLabel: String {
+    get {_storage._changeLabel}
+    set {_uniqueStorage()._changeLabel = newValue}
+  }
+
+  public var cardID: String {
+    get {_storage._cardID}
+    set {_uniqueStorage()._cardID = newValue}
+  }
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _storage = _StorageClass.defaultInstance
+}
+
+public nonisolated struct ClientTimelineCodeReviewFinding: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var id: String = String()
+
+  /// Repository-relative path, for opening it in the Changes pane.
+  public var file: String = String()
+
+  public var startLine: Int32 = 0
+
+  public var endLine: Int32 = 0
+
+  /// "internal/git/unborn.go:23–26".
+  public var locationLabel: String = String()
+
+  /// "high", "medium" or "low", and how a row says it: "High".
+  public var severity: String = String()
+
+  public var severityLabel: String = String()
+
+  public var confidence: Int32 = 0
+
+  public var title: String = String()
+
+  /// Markdown.
+  public var body: String = String()
+
+  /// Markdown; empty when the reviewer suggested no fix.
+  public var suggestion: String = String()
+
+  /// "new", "open" or "resolved", and how a row says it: "Still open".
+  public var status: String = String()
+
+  public var statusLabel: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
 }
 
 /// Messages handed to a conversation rule, e.g. those a row's copy action copies.
@@ -17585,7 +17987,7 @@ nonisolated extension ClientMachineSyncState: SwiftProtobuf._ProtoNameProviding 
 }
 
 nonisolated extension ClientTimelineStepKind: SwiftProtobuf._ProtoNameProviding {
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0TIMELINE_STEP_KIND_UNSPECIFIED\0\u{1}TIMELINE_STEP_KIND_TEXT\0\u{1}TIMELINE_STEP_KIND_REASONING\0\u{1}TIMELINE_STEP_KIND_TOOL\0\u{1}TIMELINE_STEP_KIND_ATTENTION\0\u{1}TIMELINE_STEP_KIND_ATTACHMENT\0\u{1}TIMELINE_STEP_KIND_OTHER\0\u{1}TIMELINE_STEP_KIND_SUBAGENTS\0\u{1}TIMELINE_STEP_KIND_PEER_NOTICE\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0TIMELINE_STEP_KIND_UNSPECIFIED\0\u{1}TIMELINE_STEP_KIND_TEXT\0\u{1}TIMELINE_STEP_KIND_REASONING\0\u{1}TIMELINE_STEP_KIND_TOOL\0\u{1}TIMELINE_STEP_KIND_ATTENTION\0\u{1}TIMELINE_STEP_KIND_ATTACHMENT\0\u{1}TIMELINE_STEP_KIND_OTHER\0\u{1}TIMELINE_STEP_KIND_SUBAGENTS\0\u{1}TIMELINE_STEP_KIND_PEER_NOTICE\0\u{1}TIMELINE_STEP_KIND_CODE_REVIEW\0")
 }
 
 nonisolated extension ClientToolCallStatus: SwiftProtobuf._ProtoNameProviding {
@@ -17674,7 +18076,7 @@ nonisolated extension ClientFolderDirection: SwiftProtobuf._ProtoNameProviding {
 
 nonisolated extension ClientCommand: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Command"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}adopt_session\0\u{3}begin_sign_in\0\u{3}complete_sign_in\0\u{4}\u{2}select_gateway\0\u{4}\u{2}set_connected\0\u{3}set_foreground\0\u{4}\u{2}create_conversation\0\u{3}send_message\0\u{3}start_card\0\u{3}move_card\0\u{3}finish_card\0\u{3}set_card_labels\0\u{3}set_card_pinned\0\u{3}rename_card\0\u{3}archive_card\0\u{3}cancel_card\0\u{3}mark_card_read\0\u{3}retry_pending\0\u{3}discard_pending\0\u{3}restore_card\0\u{3}add_card_label\0\u{3}update_card_draft\0\u{3}merge_card\0\u{3}fork_card\0\u{3}list_archived_cards\0\u{4}\u{2}load_earlier_messages\0\u{3}return_to_latest\0\u{3}refresh_conversation\0\u{3}set_visible_conversation\0\u{3}load_later_messages\0\u{3}retry_failed_turn\0\u{3}remove_queued_message\0\u{3}steer_conversation\0\u{3}load_tool_output\0\u{4}\u{2}rename_machine\0\u{3}revoke_machine\0\u{3}ensure_metadata\0\u{3}use_gateway\0\u{1}resync\0\u{3}set_project_order\0\u{4}\u{3}set_project_expanded\0\u{3}set_chat_section_collapsed\0\u{3}set_chats_show_all\0\u{3}set_lane_descending\0\u{3}set_folders\0\u{3}list_drafts\0\u{3}set_draft_text\0\u{3}remember_creation\0\u{1}files\0\u{3}file_tree\0\u{1}terminals\0\u{3}terminal_overview\0\u{1}schedules\0\u{1}review\0\u{3}project_changes\0\u{3}project_workspaces\0\u{1}admin\0\u{1}telemetry\0\u{2}\u{2}processes\0\u{1}search\0\u{1}screen\0\u{4}\u{2}set_show_reasoning\0\u{3}board_view\0\u{2}\u{2}chats\0\u{1}navigation\0\u{3}creation_preview\0\u{3}choose_agent\0\u{3}sign_out\0\u{1}reconnect\0\u{3}remove_gateway\0\u{1}devices\0\u{3}system_woke\0\u{1}channels\0\u{1}mail\0\u{3}notification_response\0\u{1}folders\0\u{1}providers\0\u{b}quotas\0\u{c}B\u{1}\u{1}")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}adopt_session\0\u{3}begin_sign_in\0\u{3}complete_sign_in\0\u{4}\u{2}select_gateway\0\u{4}\u{2}set_connected\0\u{3}set_foreground\0\u{4}\u{2}create_conversation\0\u{3}send_message\0\u{3}start_card\0\u{3}move_card\0\u{3}finish_card\0\u{3}set_card_labels\0\u{3}set_card_pinned\0\u{3}rename_card\0\u{3}archive_card\0\u{3}cancel_card\0\u{3}mark_card_read\0\u{3}retry_pending\0\u{3}discard_pending\0\u{3}restore_card\0\u{3}add_card_label\0\u{3}update_card_draft\0\u{3}merge_card\0\u{3}fork_card\0\u{3}list_archived_cards\0\u{4}\u{2}load_earlier_messages\0\u{3}return_to_latest\0\u{3}refresh_conversation\0\u{3}set_visible_conversation\0\u{3}load_later_messages\0\u{3}retry_failed_turn\0\u{3}remove_queued_message\0\u{3}steer_conversation\0\u{3}load_tool_output\0\u{4}\u{2}rename_machine\0\u{3}revoke_machine\0\u{3}ensure_metadata\0\u{3}use_gateway\0\u{1}resync\0\u{3}set_project_order\0\u{4}\u{3}set_project_expanded\0\u{3}set_chat_section_collapsed\0\u{3}set_chats_show_all\0\u{3}set_lane_descending\0\u{3}set_folders\0\u{3}list_drafts\0\u{3}set_draft_text\0\u{3}remember_creation\0\u{1}files\0\u{3}file_tree\0\u{1}terminals\0\u{3}terminal_overview\0\u{1}schedules\0\u{1}review\0\u{3}project_changes\0\u{3}project_workspaces\0\u{1}admin\0\u{1}telemetry\0\u{2}\u{2}processes\0\u{1}search\0\u{1}screen\0\u{4}\u{2}set_show_reasoning\0\u{3}board_view\0\u{2}\u{2}chats\0\u{1}navigation\0\u{3}creation_preview\0\u{3}choose_agent\0\u{3}sign_out\0\u{1}reconnect\0\u{3}remove_gateway\0\u{1}devices\0\u{3}system_woke\0\u{1}channels\0\u{1}mail\0\u{3}notification_response\0\u{1}folders\0\u{1}providers\0\u{3}code_review\0\u{b}quotas\0\u{c}B\u{1}\u{1}")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -18683,6 +19085,19 @@ nonisolated extension ClientCommand: SwiftProtobuf.Message, SwiftProtobuf._Messa
           self.command = .providers(v)
         }
       }()
+      case 88: try {
+        var v: ClientCodeReviewCommand?
+        var hadOneofValue = false
+        if let current = self.command {
+          hadOneofValue = true
+          if case .codeReview(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.command = .codeReview(v)
+        }
+      }()
       default: break
       }
     }
@@ -19002,6 +19417,10 @@ nonisolated extension ClientCommand: SwiftProtobuf.Message, SwiftProtobuf._Messa
       guard case .providers(let v)? = self.command else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 87)
     }()
+    case .codeReview?: try {
+      guard case .codeReview(let v)? = self.command else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 88)
+    }()
     case nil: break
     }
     try unknownFields.traverse(visitor: &visitor)
@@ -19028,6 +19447,251 @@ nonisolated extension ClientStep: SwiftProtobuf.Message, SwiftProtobuf._MessageI
   }
 
   public static func ==(lhs: ClientStep, rhs: ClientStep) -> Bool {
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientCodeReviewCommand: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".CodeReviewCommand"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}settings\0\u{3}update_settings\0\u{3}set_enabled\0\u{1}start\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try {
+        var v: ClientCodeReviewMachine?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .settings(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .settings(v)
+        }
+      }()
+      case 2: try {
+        var v: ClientCodeReviewSettingsUpdate?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .updateSettings(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .updateSettings(v)
+        }
+      }()
+      case 3: try {
+        var v: ClientCodeReviewSwitch?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .setEnabled(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .setEnabled(v)
+        }
+      }()
+      case 4: try {
+        var v: ClientCodeReviewStart?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .start(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .start(v)
+        }
+      }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    switch self.action {
+    case .settings?: try {
+      guard case .settings(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+    }()
+    case .updateSettings?: try {
+      guard case .updateSettings(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+    }()
+    case .setEnabled?: try {
+      guard case .setEnabled(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
+    }()
+    case .start?: try {
+      guard case .start(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
+    }()
+    case nil: break
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientCodeReviewCommand, rhs: ClientCodeReviewCommand) -> Bool {
+    if lhs.action != rhs.action {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientCodeReviewMachine: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".CodeReviewMachine"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}daemon_id\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.daemonID) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.daemonID.isEmpty {
+      try visitor.visitSingularStringField(value: self.daemonID, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientCodeReviewMachine, rhs: ClientCodeReviewMachine) -> Bool {
+    if lhs.daemonID != rhs.daemonID {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientCodeReviewSettingsUpdate: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".CodeReviewSettingsUpdate"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}daemon_id\0\u{1}settings\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.daemonID) }()
+      case 2: try { try decoder.decodeSingularMessageField(value: &self._settings) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if !self.daemonID.isEmpty {
+      try visitor.visitSingularStringField(value: self.daemonID, fieldNumber: 1)
+    }
+    try { if let v = self._settings {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientCodeReviewSettingsUpdate, rhs: ClientCodeReviewSettingsUpdate) -> Bool {
+    if lhs.daemonID != rhs.daemonID {return false}
+    if lhs._settings != rhs._settings {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientCodeReviewSwitch: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".CodeReviewSwitch"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}card_id\0\u{1}enabled\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.cardID) }()
+      case 2: try { try decoder.decodeSingularBoolField(value: &self.enabled) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.cardID.isEmpty {
+      try visitor.visitSingularStringField(value: self.cardID, fieldNumber: 1)
+    }
+    if self.enabled != false {
+      try visitor.visitSingularBoolField(value: self.enabled, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientCodeReviewSwitch, rhs: ClientCodeReviewSwitch) -> Bool {
+    if lhs.cardID != rhs.cardID {return false}
+    if lhs.enabled != rhs.enabled {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientCodeReviewStart: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".CodeReviewStart"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}card_id\0\u{1}focus\0\u{1}depth\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.cardID) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.focus) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.depth) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.cardID.isEmpty {
+      try visitor.visitSingularStringField(value: self.cardID, fieldNumber: 1)
+    }
+    if !self.focus.isEmpty {
+      try visitor.visitSingularStringField(value: self.focus, fieldNumber: 2)
+    }
+    if !self.depth.isEmpty {
+      try visitor.visitSingularStringField(value: self.depth, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientCodeReviewStart, rhs: ClientCodeReviewStart) -> Bool {
+    if lhs.cardID != rhs.cardID {return false}
+    if lhs.focus != rhs.focus {return false}
+    if lhs.depth != rhs.depth {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -21556,7 +22220,7 @@ nonisolated extension ClientRememberCreation: SwiftProtobuf.Message, SwiftProtob
 
 nonisolated extension ClientCreationIntent: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".CreationIntent"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{3}board_id\0\u{3}checkout_id\0\u{1}lane\0\u{1}title\0\u{1}prompt\0\u{1}attachments\0\u{1}selection\0\u{3}label_ids\0\u{3}workspace_mode\0\u{3}workspace_branch\0\u{3}workspace_base_branch\0\u{3}workspace_base_remote\0\u{3}remote_publish_mode\0\u{3}vault_access\0\u{3}mail_access\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{3}board_id\0\u{3}checkout_id\0\u{1}lane\0\u{1}title\0\u{1}prompt\0\u{1}attachments\0\u{1}selection\0\u{3}label_ids\0\u{3}workspace_mode\0\u{3}workspace_branch\0\u{3}workspace_base_branch\0\u{3}workspace_base_remote\0\u{3}remote_publish_mode\0\u{3}vault_access\0\u{3}mail_access\0\u{3}code_review\0")
 
   fileprivate class _StorageClass {
     var _projectID: String = String()
@@ -21575,6 +22239,7 @@ nonisolated extension ClientCreationIntent: SwiftProtobuf.Message, SwiftProtobuf
     var _remotePublishMode: String = String()
     var _vaultAccess: Bool = false
     var _mailAccess: Bool = false
+    var _codeReview: Bool = false
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -21601,6 +22266,7 @@ nonisolated extension ClientCreationIntent: SwiftProtobuf.Message, SwiftProtobuf
       _remotePublishMode = source._remotePublishMode
       _vaultAccess = source._vaultAccess
       _mailAccess = source._mailAccess
+      _codeReview = source._codeReview
     }
   }
 
@@ -21635,6 +22301,7 @@ nonisolated extension ClientCreationIntent: SwiftProtobuf.Message, SwiftProtobuf
         case 14: try { try decoder.decodeSingularStringField(value: &_storage._remotePublishMode) }()
         case 15: try { try decoder.decodeSingularBoolField(value: &_storage._vaultAccess) }()
         case 16: try { try decoder.decodeSingularBoolField(value: &_storage._mailAccess) }()
+        case 17: try { try decoder.decodeSingularBoolField(value: &_storage._codeReview) }()
         default: break
         }
       }
@@ -21695,6 +22362,9 @@ nonisolated extension ClientCreationIntent: SwiftProtobuf.Message, SwiftProtobuf
       if _storage._mailAccess != false {
         try visitor.visitSingularBoolField(value: _storage._mailAccess, fieldNumber: 16)
       }
+      if _storage._codeReview != false {
+        try visitor.visitSingularBoolField(value: _storage._codeReview, fieldNumber: 17)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -21720,6 +22390,7 @@ nonisolated extension ClientCreationIntent: SwiftProtobuf.Message, SwiftProtobuf
         if _storage._remotePublishMode != rhs_storage._remotePublishMode {return false}
         if _storage._vaultAccess != rhs_storage._vaultAccess {return false}
         if _storage._mailAccess != rhs_storage._mailAccess {return false}
+        if _storage._codeReview != rhs_storage._codeReview {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -25391,7 +26062,7 @@ nonisolated extension ClientNavigationFolder: SwiftProtobuf.Message, SwiftProtob
 
 nonisolated extension ClientResult: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Result"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}done\0\u{3}sign_in_started\0\u{1}card\0\u{3}message_queued\0\u{3}page_loaded\0\u{2}\u{2}cards\0\u{3}queued_message\0\u{3}tool_output\0\u{1}drafts\0\u{3}file_document\0\u{1}files\0\u{3}file_tree\0\u{1}terminal\0\u{1}terminals\0\u{3}terminal_overview\0\u{1}schedule\0\u{2}\u{2}schedules\0\u{3}git_operation\0\u{3}change_comment\0\u{1}outcome\0\u{1}review\0\u{3}project_changes\0\u{3}project_workspaces\0\u{1}project\0\u{1}board\0\u{1}checkout\0\u{3}directory_listing\0\u{3}prompt_settings\0\u{4}\u{3}prompt_preview\0\u{1}conflict\0\u{2}\u{2}projects\0\u{1}workspace\0\u{3}created_project\0\u{3}machine_operation\0\u{3}search_results\0\u{1}processes\0\u{4}\u{2}schedule_draft\0\u{4}\u{2}creation_preview\0\u{1}channels\0\u{1}mail\0\u{3}notification_target\0\u{1}folders\0\u{1}folder\0\u{3}folder_sync_settings\0\u{3}synced_folder\0\u{3}folder_member\0\u{3}folder_attach\0\u{3}folder_saved\0\u{3}provider_sign_in\0\u{3}provider_reset\0\u{3}provider_account\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}done\0\u{3}sign_in_started\0\u{1}card\0\u{3}message_queued\0\u{3}page_loaded\0\u{2}\u{2}cards\0\u{3}queued_message\0\u{3}tool_output\0\u{1}drafts\0\u{3}file_document\0\u{1}files\0\u{3}file_tree\0\u{1}terminal\0\u{1}terminals\0\u{3}terminal_overview\0\u{1}schedule\0\u{2}\u{2}schedules\0\u{3}git_operation\0\u{3}change_comment\0\u{1}outcome\0\u{1}review\0\u{3}project_changes\0\u{3}project_workspaces\0\u{1}project\0\u{1}board\0\u{1}checkout\0\u{3}directory_listing\0\u{3}prompt_settings\0\u{4}\u{3}prompt_preview\0\u{1}conflict\0\u{2}\u{2}projects\0\u{1}workspace\0\u{3}created_project\0\u{3}machine_operation\0\u{3}search_results\0\u{1}processes\0\u{4}\u{2}schedule_draft\0\u{4}\u{2}creation_preview\0\u{1}channels\0\u{1}mail\0\u{3}notification_target\0\u{1}folders\0\u{1}folder\0\u{3}folder_sync_settings\0\u{3}synced_folder\0\u{3}folder_member\0\u{3}folder_attach\0\u{3}folder_saved\0\u{3}provider_sign_in\0\u{3}provider_reset\0\u{3}provider_account\0\u{3}reviewer_settings\0\u{3}code_review\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -26062,6 +26733,32 @@ nonisolated extension ClientResult: SwiftProtobuf.Message, SwiftProtobuf._Messag
           self.result = .providerAccount(v)
         }
       }()
+      case 59: try {
+        var v: DieterAPI.Dieter_V1_ReviewerSettings?
+        var hadOneofValue = false
+        if let current = self.result {
+          hadOneofValue = true
+          if case .reviewerSettings(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.result = .reviewerSettings(v)
+        }
+      }()
+      case 60: try {
+        var v: DieterAPI.Dieter_V1_CodeReview?
+        var hadOneofValue = false
+        if let current = self.result {
+          hadOneofValue = true
+          if case .codeReview(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.result = .codeReview(v)
+        }
+      }()
       default: break
       }
     }
@@ -26276,6 +26973,14 @@ nonisolated extension ClientResult: SwiftProtobuf.Message, SwiftProtobuf._Messag
     case .providerAccount?: try {
       guard case .providerAccount(let v)? = self.result else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 58)
+    }()
+    case .reviewerSettings?: try {
+      guard case .reviewerSettings(let v)? = self.result else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 59)
+    }()
+    case .codeReview?: try {
+      guard case .codeReview(let v)? = self.result else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 60)
     }()
     case nil: break
     }
@@ -28615,7 +29320,7 @@ nonisolated extension ClientConversationSlice: SwiftProtobuf.Message, SwiftProto
 
 nonisolated extension ClientConversationState: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ConversationState"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}runtime\0\u{3}active_turn\0\u{1}working\0\u{3}live_activity\0\u{3}live_reasoning\0\u{3}turn_started_at_millis\0\u{3}responding_model\0\u{3}unsent_task\0\u{3}steerable_id\0\u{4}\u{3}can_start\0\u{1}starting\0\u{3}context_used_tokens\0\u{3}context_window_tokens\0\u{3}unsent_attachments\0\u{3}context_percent\0\u{3}context_near_limit\0\u{3}pending_tools_summary\0\u{3}pending_tool_ids\0\u{3}can_halt\0\u{1}chat\0\u{3}show_reasoning\0\u{2}\u{7}agent\0\u{3}queued_messages\0\u{3}provider_notice\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}runtime\0\u{3}active_turn\0\u{1}working\0\u{3}live_activity\0\u{3}live_reasoning\0\u{3}turn_started_at_millis\0\u{3}responding_model\0\u{3}unsent_task\0\u{3}steerable_id\0\u{4}\u{3}can_start\0\u{1}starting\0\u{3}context_used_tokens\0\u{3}context_window_tokens\0\u{3}unsent_attachments\0\u{3}context_percent\0\u{3}context_near_limit\0\u{3}pending_tools_summary\0\u{3}pending_tool_ids\0\u{3}can_halt\0\u{1}chat\0\u{3}show_reasoning\0\u{2}\u{7}agent\0\u{3}queued_messages\0\u{3}provider_notice\0\u{3}code_review\0")
 
   fileprivate class _StorageClass {
     var _runtime: String = String()
@@ -28642,6 +29347,7 @@ nonisolated extension ClientConversationState: SwiftProtobuf.Message, SwiftProto
     var _agent: ClientAgentControlsState? = nil
     var _queuedMessages: [ClientQueuedMessageState] = []
     var _providerNotice: ClientProviderNotice? = nil
+    var _codeReview: ClientConversationCodeReview? = nil
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -28676,6 +29382,7 @@ nonisolated extension ClientConversationState: SwiftProtobuf.Message, SwiftProto
       _agent = source._agent
       _queuedMessages = source._queuedMessages
       _providerNotice = source._providerNotice
+      _codeReview = source._codeReview
     }
   }
 
@@ -28718,6 +29425,7 @@ nonisolated extension ClientConversationState: SwiftProtobuf.Message, SwiftProto
         case 30: try { try decoder.decodeSingularMessageField(value: &_storage._agent) }()
         case 31: try { try decoder.decodeRepeatedMessageField(value: &_storage._queuedMessages) }()
         case 32: try { try decoder.decodeSingularMessageField(value: &_storage._providerNotice) }()
+        case 33: try { try decoder.decodeSingularMessageField(value: &_storage._codeReview) }()
         default: break
         }
       }
@@ -28802,6 +29510,9 @@ nonisolated extension ClientConversationState: SwiftProtobuf.Message, SwiftProto
       try { if let v = _storage._providerNotice {
         try visitor.visitSingularMessageField(value: v, fieldNumber: 32)
       } }()
+      try { if let v = _storage._codeReview {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 33)
+      } }()
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -28835,10 +29546,65 @@ nonisolated extension ClientConversationState: SwiftProtobuf.Message, SwiftProto
         if _storage._agent != rhs_storage._agent {return false}
         if _storage._queuedMessages != rhs_storage._queuedMessages {return false}
         if _storage._providerNotice != rhs_storage._providerNotice {return false}
+        if _storage._codeReview != rhs_storage._codeReview {return false}
         return true
       }
       if !storagesAreEqual {return false}
     }
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientConversationCodeReview: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ConversationCodeReview"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}enabled\0\u{3}can_toggle\0\u{1}running\0\u{3}can_start\0\u{1}latest\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBoolField(value: &self.enabled) }()
+      case 2: try { try decoder.decodeSingularBoolField(value: &self.canToggle) }()
+      case 3: try { try decoder.decodeSingularBoolField(value: &self.running) }()
+      case 4: try { try decoder.decodeSingularBoolField(value: &self.canStart) }()
+      case 5: try { try decoder.decodeSingularMessageField(value: &self._latest) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if self.enabled != false {
+      try visitor.visitSingularBoolField(value: self.enabled, fieldNumber: 1)
+    }
+    if self.canToggle != false {
+      try visitor.visitSingularBoolField(value: self.canToggle, fieldNumber: 2)
+    }
+    if self.running != false {
+      try visitor.visitSingularBoolField(value: self.running, fieldNumber: 3)
+    }
+    if self.canStart != false {
+      try visitor.visitSingularBoolField(value: self.canStart, fieldNumber: 4)
+    }
+    try { if let v = self._latest {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 5)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientConversationCodeReview, rhs: ClientConversationCodeReview) -> Bool {
+    if lhs.enabled != rhs.enabled {return false}
+    if lhs.canToggle != rhs.canToggle {return false}
+    if lhs.running != rhs.running {return false}
+    if lhs.canStart != rhs.canStart {return false}
+    if lhs._latest != rhs._latest {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -29106,7 +29872,7 @@ nonisolated extension ClientTimelineStepGroup: SwiftProtobuf.Message, SwiftProto
 
 nonisolated extension ClientTimelineStep: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".TimelineStep"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}message_id\0\u{1}kind\0\u{3}part_index\0\u{1}text\0\u{1}routine\0\u{3}tool_status\0\u{3}tool_title\0\u{3}tool_status_label\0\u{3}tool_attention\0\u{3}peer_notice\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}message_id\0\u{1}kind\0\u{3}part_index\0\u{1}text\0\u{1}routine\0\u{3}tool_status\0\u{3}tool_title\0\u{3}tool_status_label\0\u{3}tool_attention\0\u{3}peer_notice\0\u{3}code_review\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -29125,6 +29891,7 @@ nonisolated extension ClientTimelineStep: SwiftProtobuf.Message, SwiftProtobuf._
       case 9: try { try decoder.decodeSingularStringField(value: &self.toolStatusLabel) }()
       case 10: try { try decoder.decodeSingularBoolField(value: &self.toolAttention) }()
       case 11: try { try decoder.decodeSingularMessageField(value: &self._peerNotice) }()
+      case 12: try { try decoder.decodeSingularMessageField(value: &self._codeReview) }()
       default: break
       }
     }
@@ -29168,6 +29935,9 @@ nonisolated extension ClientTimelineStep: SwiftProtobuf.Message, SwiftProtobuf._
     try { if let v = self._peerNotice {
       try visitor.visitSingularMessageField(value: v, fieldNumber: 11)
     } }()
+    try { if let v = self._codeReview {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 12)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -29183,6 +29953,282 @@ nonisolated extension ClientTimelineStep: SwiftProtobuf.Message, SwiftProtobuf._
     if lhs.toolStatusLabel != rhs.toolStatusLabel {return false}
     if lhs.toolAttention != rhs.toolAttention {return false}
     if lhs._peerNotice != rhs._peerNotice {return false}
+    if lhs._codeReview != rhs._codeReview {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientTimelineCodeReview: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".TimelineCodeReview"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}review_id\0\u{1}status\0\u{1}running\0\u{1}title\0\u{1}subtitle\0\u{3}counts_label\0\u{3}round_label\0\u{3}trigger_label\0\u{1}summary\0\u{1}security\0\u{1}error\0\u{1}findings\0\u{1}resolved\0\u{3}highest_severity\0\u{3}started_at_millis\0\u{3}finished_at_millis\0\u{3}change_label\0\u{3}card_id\0")
+
+  fileprivate class _StorageClass {
+    var _reviewID: String = String()
+    var _status: String = String()
+    var _running: Bool = false
+    var _title: String = String()
+    var _subtitle: String = String()
+    var _countsLabel: String = String()
+    var _roundLabel: String = String()
+    var _triggerLabel: String = String()
+    var _summary: String = String()
+    var _security: String = String()
+    var _error: String = String()
+    var _findings: [ClientTimelineCodeReviewFinding] = []
+    var _resolved: [ClientTimelineCodeReviewFinding] = []
+    var _highestSeverity: String = String()
+    var _startedAtMillis: Int64 = 0
+    var _finishedAtMillis: Int64 = 0
+    var _changeLabel: String = String()
+    var _cardID: String = String()
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _reviewID = source._reviewID
+      _status = source._status
+      _running = source._running
+      _title = source._title
+      _subtitle = source._subtitle
+      _countsLabel = source._countsLabel
+      _roundLabel = source._roundLabel
+      _triggerLabel = source._triggerLabel
+      _summary = source._summary
+      _security = source._security
+      _error = source._error
+      _findings = source._findings
+      _resolved = source._resolved
+      _highestSeverity = source._highestSeverity
+      _startedAtMillis = source._startedAtMillis
+      _finishedAtMillis = source._finishedAtMillis
+      _changeLabel = source._changeLabel
+      _cardID = source._cardID
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeSingularStringField(value: &_storage._reviewID) }()
+        case 2: try { try decoder.decodeSingularStringField(value: &_storage._status) }()
+        case 3: try { try decoder.decodeSingularBoolField(value: &_storage._running) }()
+        case 4: try { try decoder.decodeSingularStringField(value: &_storage._title) }()
+        case 5: try { try decoder.decodeSingularStringField(value: &_storage._subtitle) }()
+        case 6: try { try decoder.decodeSingularStringField(value: &_storage._countsLabel) }()
+        case 7: try { try decoder.decodeSingularStringField(value: &_storage._roundLabel) }()
+        case 8: try { try decoder.decodeSingularStringField(value: &_storage._triggerLabel) }()
+        case 9: try { try decoder.decodeSingularStringField(value: &_storage._summary) }()
+        case 10: try { try decoder.decodeSingularStringField(value: &_storage._security) }()
+        case 11: try { try decoder.decodeSingularStringField(value: &_storage._error) }()
+        case 12: try { try decoder.decodeRepeatedMessageField(value: &_storage._findings) }()
+        case 13: try { try decoder.decodeRepeatedMessageField(value: &_storage._resolved) }()
+        case 14: try { try decoder.decodeSingularStringField(value: &_storage._highestSeverity) }()
+        case 15: try { try decoder.decodeSingularInt64Field(value: &_storage._startedAtMillis) }()
+        case 16: try { try decoder.decodeSingularInt64Field(value: &_storage._finishedAtMillis) }()
+        case 17: try { try decoder.decodeSingularStringField(value: &_storage._changeLabel) }()
+        case 18: try { try decoder.decodeSingularStringField(value: &_storage._cardID) }()
+        default: break
+        }
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      if !_storage._reviewID.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._reviewID, fieldNumber: 1)
+      }
+      if !_storage._status.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._status, fieldNumber: 2)
+      }
+      if _storage._running != false {
+        try visitor.visitSingularBoolField(value: _storage._running, fieldNumber: 3)
+      }
+      if !_storage._title.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._title, fieldNumber: 4)
+      }
+      if !_storage._subtitle.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._subtitle, fieldNumber: 5)
+      }
+      if !_storage._countsLabel.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._countsLabel, fieldNumber: 6)
+      }
+      if !_storage._roundLabel.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._roundLabel, fieldNumber: 7)
+      }
+      if !_storage._triggerLabel.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._triggerLabel, fieldNumber: 8)
+      }
+      if !_storage._summary.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._summary, fieldNumber: 9)
+      }
+      if !_storage._security.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._security, fieldNumber: 10)
+      }
+      if !_storage._error.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._error, fieldNumber: 11)
+      }
+      if !_storage._findings.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._findings, fieldNumber: 12)
+      }
+      if !_storage._resolved.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._resolved, fieldNumber: 13)
+      }
+      if !_storage._highestSeverity.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._highestSeverity, fieldNumber: 14)
+      }
+      if _storage._startedAtMillis != 0 {
+        try visitor.visitSingularInt64Field(value: _storage._startedAtMillis, fieldNumber: 15)
+      }
+      if _storage._finishedAtMillis != 0 {
+        try visitor.visitSingularInt64Field(value: _storage._finishedAtMillis, fieldNumber: 16)
+      }
+      if !_storage._changeLabel.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._changeLabel, fieldNumber: 17)
+      }
+      if !_storage._cardID.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._cardID, fieldNumber: 18)
+      }
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientTimelineCodeReview, rhs: ClientTimelineCodeReview) -> Bool {
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._reviewID != rhs_storage._reviewID {return false}
+        if _storage._status != rhs_storage._status {return false}
+        if _storage._running != rhs_storage._running {return false}
+        if _storage._title != rhs_storage._title {return false}
+        if _storage._subtitle != rhs_storage._subtitle {return false}
+        if _storage._countsLabel != rhs_storage._countsLabel {return false}
+        if _storage._roundLabel != rhs_storage._roundLabel {return false}
+        if _storage._triggerLabel != rhs_storage._triggerLabel {return false}
+        if _storage._summary != rhs_storage._summary {return false}
+        if _storage._security != rhs_storage._security {return false}
+        if _storage._error != rhs_storage._error {return false}
+        if _storage._findings != rhs_storage._findings {return false}
+        if _storage._resolved != rhs_storage._resolved {return false}
+        if _storage._highestSeverity != rhs_storage._highestSeverity {return false}
+        if _storage._startedAtMillis != rhs_storage._startedAtMillis {return false}
+        if _storage._finishedAtMillis != rhs_storage._finishedAtMillis {return false}
+        if _storage._changeLabel != rhs_storage._changeLabel {return false}
+        if _storage._cardID != rhs_storage._cardID {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientTimelineCodeReviewFinding: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".TimelineCodeReviewFinding"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}file\0\u{3}start_line\0\u{3}end_line\0\u{3}location_label\0\u{1}severity\0\u{3}severity_label\0\u{1}confidence\0\u{1}title\0\u{1}body\0\u{1}suggestion\0\u{1}status\0\u{3}status_label\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.id) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.file) }()
+      case 3: try { try decoder.decodeSingularInt32Field(value: &self.startLine) }()
+      case 4: try { try decoder.decodeSingularInt32Field(value: &self.endLine) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.locationLabel) }()
+      case 6: try { try decoder.decodeSingularStringField(value: &self.severity) }()
+      case 7: try { try decoder.decodeSingularStringField(value: &self.severityLabel) }()
+      case 8: try { try decoder.decodeSingularInt32Field(value: &self.confidence) }()
+      case 9: try { try decoder.decodeSingularStringField(value: &self.title) }()
+      case 10: try { try decoder.decodeSingularStringField(value: &self.body) }()
+      case 11: try { try decoder.decodeSingularStringField(value: &self.suggestion) }()
+      case 12: try { try decoder.decodeSingularStringField(value: &self.status) }()
+      case 13: try { try decoder.decodeSingularStringField(value: &self.statusLabel) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.id.isEmpty {
+      try visitor.visitSingularStringField(value: self.id, fieldNumber: 1)
+    }
+    if !self.file.isEmpty {
+      try visitor.visitSingularStringField(value: self.file, fieldNumber: 2)
+    }
+    if self.startLine != 0 {
+      try visitor.visitSingularInt32Field(value: self.startLine, fieldNumber: 3)
+    }
+    if self.endLine != 0 {
+      try visitor.visitSingularInt32Field(value: self.endLine, fieldNumber: 4)
+    }
+    if !self.locationLabel.isEmpty {
+      try visitor.visitSingularStringField(value: self.locationLabel, fieldNumber: 5)
+    }
+    if !self.severity.isEmpty {
+      try visitor.visitSingularStringField(value: self.severity, fieldNumber: 6)
+    }
+    if !self.severityLabel.isEmpty {
+      try visitor.visitSingularStringField(value: self.severityLabel, fieldNumber: 7)
+    }
+    if self.confidence != 0 {
+      try visitor.visitSingularInt32Field(value: self.confidence, fieldNumber: 8)
+    }
+    if !self.title.isEmpty {
+      try visitor.visitSingularStringField(value: self.title, fieldNumber: 9)
+    }
+    if !self.body.isEmpty {
+      try visitor.visitSingularStringField(value: self.body, fieldNumber: 10)
+    }
+    if !self.suggestion.isEmpty {
+      try visitor.visitSingularStringField(value: self.suggestion, fieldNumber: 11)
+    }
+    if !self.status.isEmpty {
+      try visitor.visitSingularStringField(value: self.status, fieldNumber: 12)
+    }
+    if !self.statusLabel.isEmpty {
+      try visitor.visitSingularStringField(value: self.statusLabel, fieldNumber: 13)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientTimelineCodeReviewFinding, rhs: ClientTimelineCodeReviewFinding) -> Bool {
+    if lhs.id != rhs.id {return false}
+    if lhs.file != rhs.file {return false}
+    if lhs.startLine != rhs.startLine {return false}
+    if lhs.endLine != rhs.endLine {return false}
+    if lhs.locationLabel != rhs.locationLabel {return false}
+    if lhs.severity != rhs.severity {return false}
+    if lhs.severityLabel != rhs.severityLabel {return false}
+    if lhs.confidence != rhs.confidence {return false}
+    if lhs.title != rhs.title {return false}
+    if lhs.body != rhs.body {return false}
+    if lhs.suggestion != rhs.suggestion {return false}
+    if lhs.status != rhs.status {return false}
+    if lhs.statusLabel != rhs.statusLabel {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

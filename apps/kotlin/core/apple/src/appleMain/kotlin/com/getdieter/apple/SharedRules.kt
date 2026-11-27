@@ -8,6 +8,7 @@ import com.getdieter.api.v1.MessagePart
 import com.getdieter.api.v1.Project
 import com.getdieter.api.v1.QueuedMessage
 import com.getdieter.api.v1.RemoteDesktopSessionBinding
+import com.getdieter.api.v1.ReviewerSettings
 import com.getdieter.api.v1.StartRemoteDesktopRequest
 import com.getdieter.api.v1.Subagent
 import com.getdieter.api.v1.TaskPlan
@@ -32,6 +33,7 @@ import com.getdieter.client.v1.GitOperationForm
 import com.getdieter.client.v1.GitOperationFormSpec
 import com.getdieter.client.v1.HostnameSets
 import com.getdieter.client.v1.LabelPalette
+import com.getdieter.client.v1.MachineEntry
 import com.getdieter.client.v1.MachineOperationCopy
 import com.getdieter.client.v1.NavigationSlice
 import com.getdieter.client.v1.ProjectNavigation
@@ -67,6 +69,7 @@ import com.getdieter.core.client.rules.ScreenExports
 import com.getdieter.core.client.rules.TerminalExports
 import com.getdieter.core.client.rules.WorkspaceExports
 import com.getdieter.core.presentation.MarkdownDiagrams
+import com.getdieter.core.reviews.ReviewerForm
 import com.getdieter.core.screens.ScreenTrust
 import com.getdieter.core.screens.ScreenTrustException
 import kotlin.time.Instant
@@ -222,6 +225,81 @@ object SharedRules {
     fun providerOmpAccessMessage(): String = ProviderExports.ompAccessMessage()
 
     fun providerOmpAccessConfirm(): String = ProviderExports.ompAccessConfirm()
+
+    // --- Code reviewer ------------------------------------------------------------
+
+    /**
+     * The machine the reviewer settings form reads and saves on, whose catalog its pickers show: of
+     * [machines] (encoded `MachineEntry`s in the session's order) this device's when it is
+     * available, else the first available one; "" while none is.
+     */
+    fun reviewerMachine(machines: List<NSData>): String =
+        ReviewerForm.machine(machines.map { MachineEntry.ADAPTER.decode(it.toByteArray()) })
+            .orEmpty()
+
+    /**
+     * The reviewer's agent, model and effort pickers: [settings] is an encoded
+     * `dieter.v1.ReviewerSettings`, [catalog] the edited machine's encoded
+     * `dieter.v1.HarnessCatalog`; returns an encoded `AgentControlsState` without provider options
+     * or accounts.
+     */
+    fun reviewerAgentControls(settings: NSData, catalog: NSData): NSData =
+        AgentControlsState.ADAPTER.encode(
+                ReviewerForm.agent(reviewerSettings(settings), harnesses(catalog))
+            )
+            .toNSData()
+
+    /**
+     * [settings] after a picker's encoded `AgentChoice` [choice]: another agent takes its default
+     * model and effort, another model its default effort; returns an encoded
+     * `dieter.v1.ReviewerSettings`.
+     */
+    fun reviewerChoosing(settings: NSData, catalog: NSData, choice: NSData): NSData =
+        ReviewerSettings.ADAPTER.encode(
+                ReviewerForm.choosing(
+                    reviewerSettings(settings),
+                    harnesses(catalog),
+                    AgentChoice.ADAPTER.decode(choice.toByteArray()),
+                )
+            )
+            .toNSData()
+
+    /** "Defaults" until someone saved the setting, else "Claude Code · opus". */
+    fun reviewerStatus(settings: NSData, catalog: NSData): String =
+        ReviewerForm.status(reviewerSettings(settings), harnesses(catalog))
+
+    /** Why [settings] cannot be saved, as the daemon would refuse them; "" when they can. */
+    fun reviewerProblem(settings: NSData): String =
+        ReviewerForm.problem(reviewerSettings(settings)).orEmpty()
+
+    /** "quick" and "thorough", in the order a depth picker shows them. */
+    fun reviewerDepths(): List<String> = ReviewerForm.DEPTHS
+
+    /** "Quick", "Thorough". */
+    fun reviewerDepthTitle(depth: String): String = ReviewerForm.depthTitle(depth)
+
+    /** What a depth does, in one line; an empty depth is the quick default. */
+    fun reviewerDepthDetail(depth: String): String =
+        ReviewerForm.depthDetail(depth.ifEmpty { ReviewerForm.QUICK })
+
+    /** The title of a form that shows the defaults nobody saved yet. */
+    fun reviewerDefaultsLabel(): String = ReviewerForm.DEFAULTS
+
+    /** The fewest and most findings a review may report. */
+    fun reviewerMinFindings(): Int = ReviewerForm.MAX_FINDINGS.first
+
+    fun reviewerMaxFindings(): Int = ReviewerForm.MAX_FINDINGS.last
+
+    /** The fewest and most reviews agents may ask for per task. */
+    fun reviewerMinRounds(): Int = ReviewerForm.MAX_ROUNDS.first
+
+    fun reviewerMaxRounds(): Int = ReviewerForm.MAX_ROUNDS.last
+
+    private fun reviewerSettings(data: NSData): ReviewerSettings =
+        ReviewerSettings.ADAPTER.decode(data.toByteArray())
+
+    private fun harnesses(catalog: NSData) =
+        HarnessCatalog.ADAPTER.decode(catalog.toByteArray()).harnesses
 
     // --- Files --------------------------------------------------------------------
 

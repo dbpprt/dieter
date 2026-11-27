@@ -35,6 +35,9 @@ Actions:
   move         Move a card to another lane
   labels       Replace a card's board labels
   present      Show a file or URL in the conversation's workspace pane
+  review       Review the card's changes with the code reviewer
+  reviews      List the card's code reviews, or show one
+  reviewer     Switch the card's code reviewer on or off
   read         Mark a displayed model response as seen
   rename       Rename a card
   update       Update the title, or a draft's task brief and agent settings
@@ -52,8 +55,8 @@ const chatHelp = `Usage: dieter chat <action>
 
 Actions:
   create, list, show, context, transcript, poll, watch, tool-output, send,
-  queue, cancel, present, read, rename, update, fork, archive, unarchive,
-  workspace, pin, unpin
+  queue, cancel, present, review, reviews, reviewer, read, rename, update,
+  fork, archive, unarchive, workspace, pin, unpin
 
 A standalone chat is a conversation without a board: it has no lanes or labels
 and starts when created. Actions take the same options as their card versions
@@ -104,6 +107,12 @@ func (c *CLI) rpcCard(args []string, chat bool) error {
 		return c.rpcCardToolOutput(args[1:])
 	case "present":
 		return c.rpcCardPresent(args[1:])
+	case "review":
+		return c.rpcCardReview(args[1:])
+	case "reviews":
+		return c.rpcCardReviews(args[1:])
+	case "reviewer":
+		return c.rpcCardReviewer(args[1:])
 	case "fork":
 		return c.rpcCardFork(args[1:])
 	case "send":
@@ -202,6 +211,9 @@ Options:
                             vault (fixed at creation; see dieter vault --help)
   --mail                    Let this conversation's agent turns send you mail
                             (fixed at creation; see dieter mail --help)
+  --code-review             Give this conversation's agent turns the code
+                            reviewer (switch later with dieter card reviewer;
+                            see dieter reviewer --help)
   --format json|id          Output format
 
 Destination defaults to the running local daemon. Pass global --machine ID|NAME
@@ -238,6 +250,7 @@ before the command to create on another enrolled machine.
 	remotePublish := set.String("remote-publish", "", "manual, pull_request, or push_base")
 	vaultAccess := set.Bool("vault", false, "grant agent turns access to the account vault")
 	mailAccess := set.Bool("mail", false, "let agent turns send the user mail")
+	codeReview := set.Bool("code-review", false, "give agent turns the code reviewer")
 	format := set.String("format", "json", "json or id")
 	help, err := parse(set, args, c.scoped(usage), c.Out)
 	if help || err != nil {
@@ -292,6 +305,7 @@ before the command to create on another enrolled machine.
 		ClientId: "dieter-cli", CommandId: commandID, WorkspaceMode: *workspaceMode,
 		WorkspaceBranch: *branch, WorkspaceBaseBranch: *baseBranch, AutoGenerateTitle: *autoTitle,
 		WorkspaceBaseRemote: *baseRemote, RemotePublishMode: *remotePublish, VaultAccess: *vaultAccess, MailAccess: *mailAccess,
+		CodeReview: *codeReview,
 	}
 	client, rpcCtx, err := c.rpc(ctx)
 	if err != nil {

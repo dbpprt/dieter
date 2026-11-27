@@ -1,0 +1,35 @@
+{
+  "review": {
+    "estimated_effort_to_review_[1-5]": 4,
+    "relevant_tests": "Yes\n",
+    "key_issues_to_review": [
+      {
+        "relevant_file": "internal/git/workspace/manager.go\n",
+        "issue_header": "Lock never released\n",
+        "issue_content": "The repository lock is now taken at the start of `provision` for every worktree, but its `release` func is thrown away (`_ = release`). The old code used `defer release()`. As written, every `Ensure` or provision of a worktree leaves the project's repository lock held. Unless `LockRepository` is reentrant for every later caller, later `mergeLocal`, `cleanup` or provision calls on the same project will block forever or fail. Callers that could be affected include another process or a holder with a different checkout. Restore `defer release()`.\n",
+        "start_line": 178,
+        "end_line": 184
+      },
+      {
+        "relevant_file": "internal/git/workspace/manager.go\n",
+        "issue_header": "Unborn origin lost\n",
+        "issue_content": "Here is the problem case. A worktree is created while `main` is unborn and has no commits yet (`HeadSHA == \"\"`). Another workspace then bootstraps `main`, and this worktree is provisioned again (for example, through a later `Ensure`). `BaseSHA` is then set to the new `main` SHA. The worktree directory already exists, so it stays on its orphan branch. Its first commit will be a root commit unrelated to `main`, so the unborn-origin markers (`value.BaseSHA == \"\"`) are gone. Squash and merge-commit no longer add `--allow-unrelated-histories` and fail with \"refusing to merge unrelated histories\". Fast-forward fails too. `readCommits` gets merge-base exit 1 with `unbornOrigin=false`, so no commits are shown. One thing is unverified: whether `Ensure` re-runs `provision` for an already-ready worktree. The retry test and the early return for an existing worktree suggest it does. A possible fix is to keep `BaseSHA` empty when the worktree path already exists and is on an unborn branch.\n",
+        "start_line": 206,
+        "end_line": 208
+      },
+      {
+        "relevant_file": "internal/git/operations/manager.go\n",
+        "issue_header": "Symlink ancestor gap\n",
+        "issue_content": "The comment says this check refuses symlink ancestors, but an intermediate component that is not a directory is only stepped over. Because `os.Lstat` follows the earlier components, the check depends on what the symlink's target contains. Example: the base checkout has an ignored symlink `data -> /mnt/data`, and the incoming tree adds `data/.gitkeep`. If the target has no `.gitkeep`, or the link is dangling, the leaf `Lstat` returns `ErrNotExist` and the loop exits. The unborn merge then goes ahead, and Git unlinks the ignored symlink to create a real directory. This is the overwrite of ignored files the function is meant to prevent. The test only covers the case where the leaf exists in the target. Refuse when an intermediate component is not a directory (`i < len(parts)-1 && !info.IsDir()`).\n",
+        "start_line": 1039,
+        "end_line": 1053
+      }
+    ],
+    "security_concerns": "No\n"
+  },
+  "usage": {},
+  "coverage": {
+    "files_not_reviewed": [],
+    "files_partially_reviewed": []
+  }
+}

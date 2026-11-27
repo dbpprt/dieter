@@ -370,7 +370,7 @@ internal fun CreationScreen(store: MobileStore, chat: Boolean) {
             }
             item("access") {
                 SectionHeader("Access")
-                Group(listOf(0, 1)) { index, position ->
+                Group(listOf(0, 1, 2)) { index, position ->
                     if (index == 0)
                         ListRow(
                             "Allow vault access",
@@ -384,7 +384,7 @@ internal fun CreationScreen(store: MobileStore, chat: Boolean) {
                                 )
                             },
                         )
-                    else
+                    else if (index == 1)
                         ListRow(
                             "Allow mail to you",
                             position = position,
@@ -397,8 +397,22 @@ internal fun CreationScreen(store: MobileStore, chat: Boolean) {
                                 )
                             },
                         )
+                    else
+                        ListRow(
+                            "Code review",
+                            position = position,
+                            subtitle =
+                                "The agent can ask a separate reviewer model to check its changes",
+                            trailing = {
+                                DSwitch(
+                                    intent.code_review,
+                                    { store.creation.update(intent.copy(code_review = it)) },
+                                    Modifier.testTag("code-review"),
+                                )
+                            },
+                        )
                 }
-                SectionFooter("Set only when creating.")
+                SectionFooter("Vault and mail access are set only when creating.")
             }
             val labels = board?.labels.orEmpty()
             if (!chat && labels.isNotEmpty())

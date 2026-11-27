@@ -109,6 +109,8 @@ final class ConversationContentModel {
     @ObservationIgnored private var bindingGeneration = 0
     @ObservationIgnored private var suspended = false
     @ObservationIgnored private var pendingTab: ConversationContentTab?
+    /// A file to select in a conversation's review once its tab opens.
+    @ObservationIgnored private var pendingReviewPath: (conversationID: String, path: String)?
     @ObservationIgnored var currentEndpointID: @MainActor (String) -> String? = { _ in nil }
     @ObservationIgnored var validateWebURL: @MainActor (URL, String) throws -> Void = { _, _ in }
     @ObservationIgnored var shouldOpenWebURLExternally: @MainActor (URL) -> Bool = {
@@ -201,6 +203,23 @@ final class ConversationContentModel {
         guard !confirming else { return }
         cancelPending()
         openTask = Task { _ = await openPanel(kind, conversationID: id) }
+    }
+
+    /// Shows the conversation's Changes with `path` selected, e.g. a code
+    /// review finding's file. Beside a split workspace that is its review
+    /// tab, opened when needed; otherwise the caller selects the path in the
+    /// single pane's Changes.
+    func showChanges(path: String, conversationID id: String) {
+        guard !confirming, !id.isEmpty else { return }
+        conversationTab = ConversationFixedSidebarTab.changes.rawValue
+        guard isPresented(for: id) else { return }
+        if let review = tabs.first(where: { $0.conversationID == id && $0.kind == .review }) {
+            selectTab(review.id)
+            review.review.show(path: path)
+        } else {
+            pendingReviewPath = path.isEmpty ? nil : (id, path)
+            requestPanel(.review, conversationID: id)
+        }
     }
 
     func showEmpty(conversationID id: String) {
@@ -596,6 +615,10 @@ final class ConversationContentModel {
 
     private func append(_ tab: ConversationContentTab, reveal: Bool = true) {
         tabs.append(tab)
+        if tab.kind == .review, let pending = pendingReviewPath, pending.conversationID == tab.conversationID {
+            pendingReviewPath = nil
+            tab.review.show(path: pending.path)
+        }
         selectedTabID = tab.id
         if reveal {
             suspended = false

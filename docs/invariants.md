@@ -83,6 +83,12 @@ invariant, it is named; keep it passing rather than weakening it.
   model's account and, for an advisor on the other provider, the advisor's
   account), resolved on the conversation's owner daemon, and is refused when
   one of them is not signed in there (`internal/engine/accounts`).
+- A code review is a bare harness turn on the conversation's owner daemon, run
+  on a disposable snapshot worktree under `DIETER_HOME/runtime/reviews`, never
+  in the conversation's workspace. The reviewer gets no host tools, steering,
+  vault or mail; its findings reach the user and the agent and never approve,
+  merge or move anything. The reviewer setting is one replicated KV record that
+  only daemons write (`internal/engine/reviewer`, `ReviewService`).
 - Permit concurrent agent turns in the same registered checkout. There are no
   global, harness or board parallel-session caps. Runtime leases enforce at most
   one active turn per conversation across API, CLI and scheduled starts.

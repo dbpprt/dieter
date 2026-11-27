@@ -791,6 +791,7 @@ private fun timelineStep(step: TimelineStep): ClientTimelineStep {
         tool_status_label = status?.let(Tools::statusText).orEmpty(),
         tool_attention = status != null && Tools.needsAttention(status),
         peer_notice = step.peerNotice,
+        code_review = step.codeReview,
     )
 }
 
@@ -804,6 +805,7 @@ private fun timelineStepKind(kind: StepKind): TimelineStepKind =
         StepKind.OTHER -> TimelineStepKind.TIMELINE_STEP_KIND_OTHER
         StepKind.SUBAGENTS -> TimelineStepKind.TIMELINE_STEP_KIND_SUBAGENTS
         StepKind.PEER_NOTICE -> TimelineStepKind.TIMELINE_STEP_KIND_PEER_NOTICE
+        StepKind.CODE_REVIEW -> TimelineStepKind.TIMELINE_STEP_KIND_CODE_REVIEW
     }
 
 private fun toolCallStatus(status: ToolStatus): ToolCallStatus =

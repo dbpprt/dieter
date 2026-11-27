@@ -1243,8 +1243,11 @@ type Card struct {
 	// Owner-local: the provider account (a provider-accounts KV key) of the
 	// latest turn. Never a credential.
 	ProviderAccountId string `protobuf:"bytes,49,opt,name=provider_account_id,json=providerAccountId,proto3" json:"provider_account_id,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// Agent turns get Dieter's code reviewer (ReviewService): owner-local,
+	// switchable at any time, effective from the next turn.
+	CodeReview    bool `protobuf:"varint,50,opt,name=code_review,json=codeReview,proto3" json:"code_review,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Card) Reset() {
@@ -1604,6 +1607,13 @@ func (x *Card) GetProviderAccountId() string {
 		return x.ProviderAccountId
 	}
 	return ""
+}
+
+func (x *Card) GetCodeReview() bool {
+	if x != nil {
+		return x.CodeReview
+	}
+	return false
 }
 
 type CardOrigin struct {
@@ -5211,7 +5221,7 @@ const file_dieter_v1_common_proto_rawDesc = "" +
 	"\x0eCardStateField\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
 	"\brevision\x18\x02 \x01(\tR\brevision\x127\n" +
-	"\bversions\x18\x03 \x03(\v2\x1b.dieter.v1.CardStateVersionR\bversions\"\xa6\x0f\n" +
+	"\bversions\x18\x03 \x03(\v2\x1b.dieter.v1.CardStateVersionR\bversions\"\xc7\x0f\n" +
 	"\x04Card\x12<\n" +
 	"\fstate_fields\x18. \x03(\v2\x19.dieter.v1.CardStateFieldR\vstateFields\x12&\n" +
 	"\x0fowner_daemon_id\x18& \x01(\tR\rownerDaemonId\x12\x1f\n" +
@@ -5266,7 +5276,9 @@ const file_dieter_v1_common_proto_rawDesc = "" +
 	"\fvault_access\x18/ \x01(\bR\vvaultAccess\x12\x1f\n" +
 	"\vmail_access\x180 \x01(\bR\n" +
 	"mailAccess\x12.\n" +
-	"\x13provider_account_id\x181 \x01(\tR\x11providerAccountId\x1aB\n" +
+	"\x13provider_account_id\x181 \x01(\tR\x11providerAccountId\x12\x1f\n" +
+	"\vcode_review\x182 \x01(\bR\n" +
+	"codeReview\x1aB\n" +
 	"\x14ProviderOptionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x18\x10\x19J\x04\b%\x10&R\x14provider_account_key\"\x8e\x01\n" +

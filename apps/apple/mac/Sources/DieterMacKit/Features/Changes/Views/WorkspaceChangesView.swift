@@ -198,6 +198,7 @@ private struct WorkspaceReviewToolbar: View {
             }
             Spacer(minLength: 6)
             if workspace != nil {
+                ReviewChangesButton(iconOnly: compact)
                 toolbarActions
             }
             Menu {

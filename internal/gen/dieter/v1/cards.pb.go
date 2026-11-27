@@ -97,7 +97,9 @@ type CreateConversationRequest struct {
 	// An agent turn may grant it only when its own conversation has it.
 	MailAccess bool `protobuf:"varint,26,opt,name=mail_access,json=mailAccess,proto3" json:"mail_access,omitempty"`
 	// Provider account for the first turn; empty uses the provider default.
-	AccountId     string `protobuf:"bytes,27,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	AccountId string `protobuf:"bytes,27,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	// Give this conversation's agent turns the code reviewer (ReviewService).
+	CodeReview    bool `protobuf:"varint,28,opt,name=code_review,json=codeReview,proto3" json:"code_review,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -298,6 +300,13 @@ func (x *CreateConversationRequest) GetAccountId() string {
 		return x.AccountId
 	}
 	return ""
+}
+
+func (x *CreateConversationRequest) GetCodeReview() bool {
+	if x != nil {
+		return x.CodeReview
+	}
+	return false
 }
 
 type ListChatsRequest struct {
@@ -1122,7 +1131,7 @@ const file_dieter_v1_cards_proto_rawDesc = "" +
 	"\n" +
 	"\x15dieter/v1/cards.proto\x12\tdieter.v1\x1a\x16dieter/v1/common.proto\x1a\x1bgoogle/protobuf/empty.proto\"6\n" +
 	"\rCardsResponse\x12%\n" +
-	"\x05cards\x18\x01 \x03(\v2\x0f.dieter.v1.CardR\x05cards\"\xdd\a\n" +
+	"\x05cards\x18\x01 \x03(\v2\x0f.dieter.v1.CardR\x05cards\"\xfe\a\n" +
 	"\x19CreateConversationRequest\x12\x1f\n" +
 	"\vcheckout_id\x18\x18 \x01(\tR\n" +
 	"checkoutId\x12\x1d\n" +
@@ -1154,7 +1163,9 @@ const file_dieter_v1_cards_proto_rawDesc = "" +
 	"\vmail_access\x18\x1a \x01(\bR\n" +
 	"mailAccess\x12\x1d\n" +
 	"\n" +
-	"account_id\x18\x1b \x01(\tR\taccountId\x1aB\n" +
+	"account_id\x18\x1b \x01(\tR\taccountId\x12\x1f\n" +
+	"\vcode_review\x18\x1c \x01(\bR\n" +
+	"codeReview\x1aB\n" +
 	"\x14ProviderOptionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"=\n" +

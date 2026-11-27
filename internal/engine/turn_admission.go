@@ -223,6 +223,9 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, re
 	} else if previousConversation.Status == "interrupted" {
 		harnessPrompt = interruptedConversationPrompt(previousConversation, content)
 	}
+	if adapter.Runtime != strixAdapter {
+		harnessPrompt = codeReviewContext(conversation, harnessPrompt)
+	}
 	request := harness.Request{
 		Harness: provider, Adapter: adapter.Runtime, Model: configuredModel.RuntimeID(), ConfiguredModel: modelName, ContextWindow: configuredModel.ContextWindow, Effort: effort, Options: providerOptions, Prompt: content, ResponseMessageID: responseMessageID,
 		Attachments:  messagePartsAttachments(parts),

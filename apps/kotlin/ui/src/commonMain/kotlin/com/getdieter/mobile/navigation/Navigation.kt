@@ -194,6 +194,11 @@ sealed class MobileRoute {
         override val key = "folder-sync"
     }
 
+    /** Settings › Code reviewer: the account's reviewer setting. */
+    data object CodeReviewer : MobileRoute() {
+        override val key = "code-reviewer"
+    }
+
     /** Creates a folder or joins one, presented modally; [folderId] preselects one to join. */
     data class AddFolder(val folderId: String = "") : MobileRoute() {
         override val key = "add-folder/$folderId"

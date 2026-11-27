@@ -61,6 +61,12 @@ func commandTable() []command {
 			subcommands: []string{"list", "add", "rename", "include", "exclude", "default", "omp-access", "remove", "login", "logout", "check", "usage", "reset", "token"},
 		},
 		{
+			name:        "reviewer",
+			summary:     "Show or change the account's code reviewer: harness, model, depth, limits",
+			run:         (*CLI).rpcReviewer,
+			subcommands: []string{"show", "update"},
+		},
+		{
 			name:        "project",
 			aliases:     []string{"projects"},
 			summary:     "Create, browse, configure archive cleanup, relocate, and restore projects",
@@ -79,14 +85,14 @@ func commandTable() []command {
 			aliases:     []string{"cards"},
 			summary:     "Create, edit, read, present files, merge, and manage board conversations",
 			run:         func(c *CLI, args []string) error { return c.rpcCard(args, false) },
-			subcommands: []string{"present", "create", "list", "show", "context", "transcript", "poll", "watch", "tool-output", "fork", "send", "queue", "queue remove", "read", "merge", "move", "start", "labels", "cancel", "rename", "update", "archive", "unarchive", "workspace"},
+			subcommands: []string{"present", "review", "reviews", "reviewer", "create", "list", "show", "context", "transcript", "poll", "watch", "tool-output", "fork", "send", "queue", "queue remove", "read", "merge", "move", "start", "labels", "cancel", "rename", "update", "archive", "unarchive", "workspace"},
 		},
 		{
 			name:        "chat",
 			aliases:     []string{"chats"},
 			summary:     "Manage standalone conversations and present files or URLs",
 			run:         func(c *CLI, args []string) error { return c.rpcCard(args, true) },
-			subcommands: []string{"present", "create", "list", "show", "context", "transcript", "poll", "watch", "tool-output", "fork", "send", "queue", "queue remove", "read", "cancel", "rename", "update", "archive", "unarchive", "workspace", "pin", "unpin"},
+			subcommands: []string{"present", "review", "reviews", "reviewer", "create", "list", "show", "context", "transcript", "poll", "watch", "tool-output", "fork", "send", "queue", "queue remove", "read", "cancel", "rename", "update", "archive", "unarchive", "workspace", "pin", "unpin"},
 		},
 		{
 			name:        "workspace",

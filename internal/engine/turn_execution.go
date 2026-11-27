@@ -81,6 +81,9 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 			return s.BackgroundProcesses(ctx, detail.Card.ID, call)
 		}
 	}
+	if detail.Card.CodeReview && request.Adapter != strixAdapter {
+		s.enableCodeReview(detail, turnID, &request)
+	}
 	s.channelTurnBegin(detail, turnID, &request)
 	finished := false
 	finish := func(startQueued bool, finalCache kanban.CardCacheInput) error {

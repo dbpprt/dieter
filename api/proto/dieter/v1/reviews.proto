@@ -1,0 +1,156 @@
+syntax = "proto3";
+
+package dieter.v1;
+
+option go_package = "github.com/dbpprt/dieter/internal/gen/dieter/v1;dieterv1";
+option java_multiple_files = true;
+option java_package = "com.getdieter.api.v1";
+
+import "dieter/v1/common.proto";
+import "google/protobuf/empty.proto";
+
+// Code review of a conversation's changes by a separately configured,
+// Dieter-managed harness. The reviewer setting is one account-wide record
+// that replicates between the account's daemons; a review runs on the
+// conversation's owner daemon, on a disposable snapshot of its workspace, and
+// its result is a data-code-review part of the conversation (the JSON form of
+// CodeReview) as well as this API's CodeReview.
+service ReviewService {
+  // GetReviewerSettings returns the account's reviewer setting, or the
+  // defaults (configured false) when nobody has saved one yet.
+  rpc GetReviewerSettings(google.protobuf.Empty) returns (ReviewerSettings);
+  // UpdateReviewerSettings replaces the reviewer setting. Agent turns are
+  // refused.
+  rpc UpdateReviewerSettings(UpdateReviewerSettingsRequest) returns (ReviewerSettings);
+  // SetCardCodeReview switches a conversation's reviewer on or off; it takes
+  // effect at the next turn. Agent turns are refused.
+  rpc SetCardCodeReview(SetCardCodeReviewRequest) returns (Card);
+  // StartCodeReview starts reviewing a conversation's changes and returns the
+  // running review at once; poll GetCodeReview for the result. An agent turn
+  // may review only its own conversation.
+  rpc StartCodeReview(StartCodeReviewRequest) returns (CodeReview);
+  rpc GetCodeReview(GetCodeReviewRequest) returns (CodeReview);
+  // ListCodeReviews lists a conversation's reviews, newest first.
+  rpc ListCodeReviews(ListCodeReviewsRequest) returns (CodeReviewsResponse);
+}
+
+message ReviewerSettings {
+  // Catalog harness, model and effort the reviewer runs on.
+  string harness = 1;
+  string model = 2;
+  string effort = 3;
+  // Provider account for Claude Code and Codex reviewers; empty uses the
+  // provider's default account.
+  string account_id = 4;
+  // "quick" (one pass over the inlined diff, the checkout only to settle
+  // doubts) or "thorough" (every finding confirmed in the code).
+  string depth = 5;
+  // At most this many findings per review (1-20).
+  int32 max_findings = 6;
+  // Findings the reviewer rates below this confidence (0-10) are dropped.
+  int32 min_confidence = 7;
+  // Extra instructions for every review, at most 4 KiB.
+  string instructions = 8;
+  // Paths matching these globs are left out of the reviewed diff, in
+  // addition to lock files and generated code.
+  repeated string ignore_globs = 9;
+  // Agent instructions ask for at most this many reviews per task (1-10).
+  int32 max_rounds = 10;
+  // False while no setting has been saved; the values are then the defaults.
+  bool configured = 11;
+  // The record revision, for UpdateReviewerSettingsRequest.expected_revision.
+  string revision = 12;
+  string updated_at = 13;
+}
+
+message UpdateReviewerSettingsRequest {
+  ReviewerSettings settings = 1;
+  // Compare-and-set: the revision the change is based on; empty overwrites.
+  string expected_revision = 2;
+}
+
+message SetCardCodeReviewRequest {
+  string card_id = 1;
+  bool enabled = 2;
+}
+
+message StartCodeReviewRequest {
+  string card_id = 1;
+  // Optional focus for this review, at most 1 KiB.
+  string focus = 2;
+  // Optional depth override ("quick" or "thorough").
+  string depth = 3;
+}
+
+message GetCodeReviewRequest {
+  string card_id = 1;
+  string review_id = 2;
+}
+
+message ListCodeReviewsRequest {
+  string card_id = 1;
+}
+
+message CodeReviewsResponse {
+  repeated CodeReview reviews = 1;
+}
+
+message CodeReview {
+  string id = 1;
+  string card_id = 2;
+  // "running", "completed", "failed" or "cancelled".
+  string status = 3;
+  // "agent" (the conversation's agent asked) or "user".
+  string trigger = 4;
+  string harness = 5;
+  string model = 6;
+  string effort = 7;
+  string depth = 8;
+  // The commit the change is compared with, and the snapshot reviewed.
+  string base_sha = 9;
+  string snapshot_sha = 10;
+  string started_at = 11;
+  string finished_at = 12;
+  int64 duration_ms = 13;
+  // What the change does, in one or two sentences.
+  string summary = 14;
+  // "No", or the security concern the reviewer saw.
+  string security = 15;
+  // Findings, most severe first.
+  repeated CodeReviewFinding findings = 16;
+  // Findings of the previous review that this one no longer reports.
+  repeated CodeReviewFinding resolved = 17;
+  // 1 for the first review of a conversation, then counting up.
+  int32 round = 18;
+  string previous_review_id = 19;
+  string error = 20;
+  int64 input_tokens = 21;
+  int64 output_tokens = 22;
+  int32 files_changed = 23;
+  int32 additions = 24;
+  int32 deletions = 25;
+  string focus = 26;
+  // The agent's request_code_review tool call, for agent reviews.
+  string tool_call_id = 27;
+  // The conversation message holding the review's data-code-review part.
+  string message_id = 28;
+}
+
+message CodeReviewFinding {
+  // Stable within a review: f1, f2, ...
+  string id = 1;
+  // Repository-relative path and new-side lines.
+  string file = 2;
+  int32 start_line = 3;
+  int32 end_line = 4;
+  // "high", "medium" or "low".
+  string severity = 5;
+  // 0-10.
+  int32 confidence = 6;
+  string title = 7;
+  string body = 8;
+  string suggestion = 9;
+  // Relative to the previous review: "new", "open" (reported again) or
+  // "resolved" (only in CodeReview.resolved).
+  string status = 10;
+}

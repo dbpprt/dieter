@@ -156,6 +156,28 @@ internal constructor(
         context.action { context.core.dispatch(Command(start_card = StartCard(card_id = id))) }
     }
 
+    /** Switches the open conversation's code reviewer; it applies from the next turn. */
+    fun setCodeReview(enabled: Boolean) {
+        val id = selectedCard.value
+        context.action {
+            context.core.dispatch(
+                Command(
+                    code_review = CodeReviewCommand(set_enabled = CodeReviewSwitch(id, enabled))
+                )
+            )
+        }
+    }
+
+    /** Asks the reviewer to review the open conversation's changes now. */
+    fun reviewChanges() {
+        val id = selectedCard.value
+        context.action {
+            context.core.dispatch(
+                Command(code_review = CodeReviewCommand(start = CodeReviewStart(card_id = id)))
+            )
+        }
+    }
+
     fun loadEarlier() {
         val id = selectedCard.value
         context.action {
