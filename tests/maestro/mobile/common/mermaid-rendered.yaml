@@ -9,6 +9,13 @@ appId: ${APP_ID}
       id: "mail-diagram-(loading|mermaid-rendered)"
     direction: DOWN
     timeout: 60000
+# The scroll stops as the diagram's top edge enters the screen. A web view almost
+# entirely off screen may not render (seen on hosted simulators), so drag it into
+# view slowly, without a fling that could carry it past.
+- swipe:
+    start: 50%, 70%
+    end: 50%, 40%
+    duration: 2000
 # Longer than the app's 60 s render budget, so a slow render is not cut short.
 - extendedWaitUntil:
     visible:
