@@ -47,7 +47,7 @@ func TestIndexSearchAndSafety(t *testing.T) {
 		t.Fatal("index exists before first use")
 	}
 	card := Card{ID: "c_scroll", Project: "p_one", Title: "Transcript scroll", Lane: "done", Harness: "codex", Scope: "board", Brief: "Fix scroll jumps"}
-	result, err := index.IndexCard(card, scrollConversation())
+	result, err := index.IndexCard(card, scrollConversation(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestIndexSearchAndSafety(t *testing.T) {
 		t.Fatalf("result = %+v, want full with 5 observations (prompt, read, error, env, answer)", result)
 	}
 	other := Card{ID: "c_other", Project: "p_one", Title: "Gateway deploy", Lane: "done", Harness: "claude-code", Scope: "board"}
-	if _, err = index.IndexCard(other, []model.UIMessage{text("o1", "user", "Deploy the gateway from the main repository"), text("o2", "assistant", "Added a deploy recipe.")}); err != nil {
+	if _, err = index.IndexCard(other, []model.UIMessage{text("o1", "user", "Deploy the gateway from the main repository"), text("o2", "assistant", "Added a deploy recipe.")}, false); err != nil {
 		t.Fatal(err)
 	}
 	hits, err := index.Search(Query{Project: "p_one", Text: "transcript scrolling jumps while streaming"})
@@ -89,7 +89,7 @@ func TestIndexSearchAndSafety(t *testing.T) {
 	}
 	// Incremental: a second turn adds only its own observations.
 	messages := append(scrollConversation(), text("m3", "user", "Also check the iOS keyboard"), text("m4", "assistant", "The keyboard inset is handled."))
-	result, err = index.IndexCard(card, messages)
+	result, err = index.IndexCard(card, messages, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestIndexSearchAndSafety(t *testing.T) {
 		t.Fatalf("stats = %+v, %v; want 2 cards, 9 observations", stats, err)
 	}
 	// Indexing twice is idempotent.
-	if result, err = index.IndexCard(card, messages); err != nil || result.Added != 1 {
+	if result, err = index.IndexCard(card, messages, false); err != nil || result.Added != 1 {
 		t.Fatalf("reindex = %+v, %v", result, err)
 	}
 	if stats, _ = index.Stats("p_one"); stats.Observations != 9 {
@@ -126,11 +126,11 @@ func TestSavedMemoryMirror(t *testing.T) {
 	if err := index.SyncMemories("p", memories, "2026-11-27T00:00:00Z"); err != nil {
 		t.Fatal(err)
 	}
-	ids, err := index.SearchMemories("p", "mac flows refuse", nil, 5)
+	ids, err := index.SearchMemories("p", "mac flows refuse", nil, nil, 5)
 	if err != nil || len(ids) != 1 || ids[0] != "mem_a" {
 		t.Fatalf("ids = %v, %v", ids, err)
 	}
-	if ids, _ = index.SearchMemories("p", "gateway deploys", nil, 5); len(ids) != 0 {
+	if ids, _ = index.SearchMemories("p", "gateway deploys", nil, nil, 5); len(ids) != 0 {
 		t.Fatalf("retired or expired memories found: %v", ids)
 	}
 	memories[0].Record.Status, memories[0].Revision = "superseded", "r2"
@@ -139,10 +139,10 @@ func TestSavedMemoryMirror(t *testing.T) {
 	if err = index.SyncMemories("p", memories, "2026-11-27T00:00:00Z"); err != nil {
 		t.Fatal(err)
 	}
-	if ids, _ = index.SearchMemories("p", "mac flows refuse", nil, 5); len(ids) != 1 || ids[0] != "mem_d" {
+	if ids, _ = index.SearchMemories("p", "mac flows refuse", nil, nil, 5); len(ids) != 1 || ids[0] != "mem_d" {
 		t.Fatalf("after supersede ids = %v", ids)
 	}
-	if ids, _ = index.SearchMemories("p", "mac flows refuse", []string{"fact"}, 5); len(ids) != 0 {
+	if ids, _ = index.SearchMemories("p", "mac flows refuse", nil, []string{"fact"}, 5); len(ids) != 0 {
 		t.Fatalf("kind filter ids = %v", ids)
 	}
 }

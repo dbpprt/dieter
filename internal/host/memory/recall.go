@@ -92,7 +92,8 @@ func (s *Service) Search(ctx context.Context, input SearchInput) (SearchResult, 
 	if err != nil {
 		return result, err
 	}
-	local, err := s.index.Search(storememory.Query{Project: project.ID, Text: input.Query, Limit: input.Limit, Files: input.Files})
+	vector := s.queryVector(input.Query)
+	local, err := s.index.Search(storememory.Query{Project: project.ID, Text: input.Query, Limit: input.Limit, Files: input.Files, Vector: vector})
 	if err != nil {
 		return result, err
 	}
@@ -104,7 +105,7 @@ func (s *Service) Search(ctx context.Context, input SearchInput) (SearchResult, 
 	}
 	// Saved memories are replicated: every daemon answers them from its own
 	// copy, local-only searches included (peers asking ignore them).
-	if result.Memories, err = s.searchMemories(project.ID, input.Query, input.Kinds); err != nil {
+	if result.Memories, err = s.searchMemories(project.ID, input.Query, vector, input.Kinds); err != nil {
 		return result, err
 	}
 	result.Hits = mergeHits(lists, limitOf(input.Limit))
@@ -297,7 +298,7 @@ func mergeHits(lists [][]Hit, limit int) []Hit {
 
 // searchMemories ranks the project's saved memories (mirrored from the
 // replicated records) against the query.
-func (s *Service) searchMemories(projectID, query string, kinds []string) ([]Memory, error) {
+func (s *Service) searchMemories(projectID, query string, vector []float32, kinds []string) ([]Memory, error) {
 	all, err := s.activeMemories(projectID)
 	if err != nil {
 		return nil, err
@@ -311,7 +312,10 @@ func (s *Service) searchMemories(projectID, query string, kinds []string) ([]Mem
 	if err = s.index.SyncMemories(projectID, saved, s.timestamp()); err != nil {
 		return nil, err
 	}
-	ids, err := s.index.SearchMemories(projectID, query, kinds, maxMemories)
+	if vector != nil {
+		s.embedMemories(projectID)
+	}
+	ids, err := s.index.SearchMemories(projectID, query, vector, kinds, maxMemories)
 	if err != nil {
 		return nil, err
 	}
@@ -322,6 +326,26 @@ func (s *Service) searchMemories(projectID, query string, kinds []string) ([]Mem
 		}
 	}
 	return out, nil
+}
+
+// embedMemories stores the vectors of saved memories that are new or
+// changed since they were last embedded.
+func (s *Service) embedMemories(projectID string) {
+	missing, err := s.index.MissingMemoryVectors(projectID)
+	if err != nil || len(missing) == 0 {
+		return
+	}
+	contents := make([]string, len(missing))
+	for i, memory := range missing {
+		contents[i] = memory.Content
+	}
+	vectors, err := s.embed.Embed(contents...)
+	if err == nil {
+		err = s.index.PutMemoryVectors(projectID, missing, vectors)
+	}
+	if err != nil {
+		s.log.Warn("agent memory could not embed saved memories", "project", projectID, "error", err)
+	}
 }
 
 // activeMemories lists a project's active, unexpired saved memories.

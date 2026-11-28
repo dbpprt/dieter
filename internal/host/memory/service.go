@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dbpprt/dieter/internal/engine"
+	"github.com/dbpprt/dieter/internal/memory/embed"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/store"
 	"github.com/dbpprt/dieter/internal/store/kanban"
@@ -46,6 +47,9 @@ type Options struct {
 	DreamCheckInterval time.Duration
 	// Now overrides the clock (tests).
 	Now func() time.Time
+	// Embedder computes recall's text vectors; nil uses the built-in model,
+	// loaded on first use and released when idle.
+	Embedder *embed.Shared
 }
 
 // Service is a daemon's agent memory.
@@ -57,6 +61,7 @@ type Service struct {
 	dial  Dialer
 	index *storememory.Index
 	now   func() time.Time
+	embed *embed.Shared
 
 	dreamInterval time.Duration
 
@@ -84,9 +89,13 @@ func New(options Options) *Service {
 	if interval <= 0 {
 		interval = dreamCheckInterval
 	}
+	embedder := options.Embedder
+	if embedder == nil {
+		embedder = embed.NewShared(0)
+	}
 	return &Service{
 		store: options.Store, app: options.App, log: logger, name: name, dial: options.Dial,
-		index: storememory.New(options.Store.Root), now: now, dreamInterval: interval,
+		index: storememory.New(options.Store.Root), now: now, dreamInterval: interval, embed: embedder,
 		pending: map[string]bool{}, queue: make(chan string, queueSize),
 	}
 }
@@ -198,8 +207,49 @@ func (s *Service) indexCard(cardID string) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.index.IndexCard(indexCard(card), conversation.Messages)
-	return err
+	// A conversation without vectors (indexed before embeddings, or by
+	// another model) is reindexed in full so all its texts are embedded.
+	embedded, err := s.index.HasVectors(card.ID)
+	if err != nil {
+		return err
+	}
+	result, err := s.index.IndexCard(indexCard(card), conversation.Messages, !embedded)
+	if err != nil {
+		return err
+	}
+	s.embedTexts(card.ID, card.ProjectID, result.Texts)
+	return nil
+}
+
+// embedTexts stores the vectors of a conversation's new or changed texts. A
+// failure only costs semantic recall; keyword recall is already indexed.
+func (s *Service) embedTexts(cardID, projectID string, texts []storememory.Text) {
+	missing, err := s.index.MissingVectors(cardID, texts)
+	if err != nil || len(missing) == 0 {
+		return
+	}
+	bodies := make([]string, len(missing))
+	for i, text := range missing {
+		bodies[i] = text.Body
+	}
+	vectors, err := s.embed.Embed(bodies...)
+	if err == nil {
+		err = s.index.PutVectors(cardID, projectID, missing, vectors)
+	}
+	if err != nil {
+		s.log.Warn("agent memory could not embed a conversation", "card", cardID, "error", err)
+	}
+}
+
+// queryVector embeds a recall query; nil (keyword recall only) when the
+// model cannot run.
+func (s *Service) queryVector(query string) []float32 {
+	vectors, err := s.embed.Embed(query)
+	if err != nil {
+		s.log.Warn("agent memory could not embed a query", "error", err)
+		return nil
+	}
+	return vectors[0]
 }
 
 func indexCard(card model.Card) storememory.Card {
@@ -250,6 +300,7 @@ func (s *Service) reconcile() {
 		for _, card := range indexed {
 			known[card.ID] = card
 		}
+		embedded, _ := s.index.CardsWithVectors(project.ID)
 		cards, err := s.store.Kanban.ListCards(kanban.CardFilter{Project: project.ID, IncludeArchived: true})
 		if err != nil {
 			continue
@@ -276,9 +327,12 @@ func (s *Service) reconcile() {
 					continue
 				}
 				s.enqueue(card.ID)
-			case later(card.LastActivityAt, entry.LastActivityAt):
+			case later(card.LastActivityAt, entry.LastActivityAt), card.Title != entry.Title:
 				s.enqueue(card.ID)
-			case card.Lane != entry.Lane || card.Title != entry.Title || card.Archived != entry.Archived:
+			case !embedded[card.ID] && s.embed.Usable():
+				// Indexed before embeddings, or by another model.
+				s.enqueue(card.ID)
+			case card.Lane != entry.Lane || card.Archived != entry.Archived:
 				_ = s.index.UpdateCard(indexCard(card))
 			}
 		}

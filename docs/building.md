@@ -66,6 +66,22 @@ The daemon targets macOS and Linux only. `go vet` and the boundaries in
 `.golangci.yml` run as part of `just lint`. The package layout is described in
 [architecture.md](architecture.md#go-packages).
 
+`mise` sets `GOEXPERIMENT=simd`, as do CI and the release builds, so agent
+memory's embedding kernels (`internal/memory/embed`) use Go's SIMD types.
+Builds without it (for example a plain `go build` outside `mise`) are still
+correct, but encode text with plain-Go kernels that are 5–40× slower. On
+macOS the matrix products use Accelerate in either case.
+
+The embedded model (`internal/memory/embed/minilm`) is generated from the
+pinned Hugging Face checkpoint, and its golden vectors from the original
+float32 model:
+
+```sh
+go run ./tools/embedmodel -src CHECKPOINT_DIR
+uv run --no-project --with numpy --with onnxruntime --with tokenizers \
+  python -I tools/embedmodel/reference.py CHECKPOINT_DIR > internal/memory/embed/testdata/golden.json
+```
+
 ### Run a local-only daemon
 
 A daemon works without a gateway: it serves its loopback API, runs agents and

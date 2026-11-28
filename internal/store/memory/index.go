@@ -75,6 +75,9 @@ type Index struct {
 	path string
 	mu   sync.Mutex
 	db   *sql.DB
+
+	vectorMu    sync.Mutex
+	vectorCache map[string][]storedVector
 }
 
 // New returns the index of the DIETER_HOME root.
@@ -111,6 +114,7 @@ func (x *Index) Close() error {
 	}
 	err := x.db.Close()
 	x.db = nil
+	x.invalidateVectors("")
 	return err
 }
 
@@ -139,11 +143,15 @@ func (x *Index) open() (*sql.DB, error) {
 	// restores them.
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
-	if _, err = db.Exec("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=10000; PRAGMA synchronous=NORMAL;" + schemaSQL); err != nil {
+	if _, err = db.Exec("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=10000; PRAGMA synchronous=NORMAL;" + schemaSQL + vectorSchemaSQL); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
 	if _, err = db.Exec(`INSERT INTO meta(key, value) VALUES('schema', ?) ON CONFLICT(key) DO NOTHING`, schemaVersion); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if err = checkVectorModel(db); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -161,13 +169,16 @@ type Card struct {
 type IndexResult struct {
 	Added int
 	Full  bool
+	// Texts are the texts to embed: the title and the prompts and final
+	// answers it indexed (see MissingVectors and PutVectors).
+	Texts []Text
 }
 
 // IndexCard indexes a conversation's messages. It is incremental: messages
 // already indexed (same count prefix, same last message) are skipped; any
-// other history, such as a merge, reindexes the conversation from scratch.
-// The digest row is rebuilt every time.
-func (x *Index) IndexCard(card Card, messages []model.UIMessage) (IndexResult, error) {
+// other history, such as a merge, or full reindexes the conversation from
+// scratch. The digest row is rebuilt every time.
+func (x *Index) IndexCard(card Card, messages []model.UIMessage, full bool) (IndexResult, error) {
 	db, err := x.open()
 	if err != nil {
 		return IndexResult{}, err
@@ -187,19 +198,20 @@ func (x *Index) IndexCard(card Card, messages []model.UIMessage) (IndexResult, e
 		return IndexResult{}, err
 	}
 	start := 0
-	full := true
-	if known && indexedMessages > 0 && indexedMessages <= len(messages) && messages[indexedMessages-1].ID == lastMessage {
-		start, full = indexedMessages, false
+	if !full && known && indexedMessages > 0 && indexedMessages <= len(messages) && messages[indexedMessages-1].ID == lastMessage {
+		start = indexedMessages
 		// The last indexed message may have grown (a reply that continued);
 		// reindex it.
 		start--
-		if _, err = tx.Exec(`DELETE FROM observations WHERE card = ? AND message = ?`, card.ID, lastMessage); err != nil {
+		if _, err = tx.Exec(`DELETE FROM observations WHERE card = ?1 AND message = ?2; DELETE FROM vectors WHERE card = ?1 AND message = ?2;`, card.ID, lastMessage); err != nil {
 			return IndexResult{}, err
 		}
+	} else {
+		full = true
 	}
 	var files, commands []string
 	if full {
-		if _, err = tx.Exec(`DELETE FROM observations WHERE card = ?`, card.ID); err != nil {
+		if _, err = tx.Exec(`DELETE FROM observations WHERE card = ?1; DELETE FROM vectors WHERE card = ?1 AND message != '';`, card.ID); err != nil {
 			return IndexResult{}, err
 		}
 		observationCount, failures, finalAnswer = 0, 0, ""
@@ -220,7 +232,11 @@ func (x *Index) IndexCard(card Card, messages []model.UIMessage) (IndexResult, e
 		return IndexResult{}, err
 	}
 	defer insert.Close()
+	texts := []Text{{Body: title}}
 	for _, observation := range observations {
+		if observation.Kind == agentmemory.KindPrompt || observation.Kind == agentmemory.KindAnswer {
+			texts = append(texts, Text{Message: observation.MessageID, Part: observation.Part, Body: observation.Body})
+		}
 		observationCount++
 		files := strings.Join(observation.Files, " ")
 		if _, err = insert.Exec(title, observation.Body, files, agentmemory.IdentifierTerms(title, observation.Body, files), card.ID, card.Project, observation.Kind, observation.Tool, observation.MessageID, observation.Part, observationCount); err != nil {
@@ -262,7 +278,8 @@ ON CONFLICT(card) DO UPDATE SET project=excluded.project, title=excluded.title, 
 	if err = tx.Commit(); err != nil {
 		return IndexResult{}, err
 	}
-	return IndexResult{Added: len(observations), Full: full}, nil
+	x.invalidateVectors(card.Project)
+	return IndexResult{Added: len(observations), Full: full, Texts: texts}, nil
 }
 
 // UpdateCard refreshes a conversation's metadata (title, lane, archived)
@@ -289,7 +306,8 @@ func (x *Index) ForgetCard(cardID string) error {
 	if err != nil {
 		return err
 	}
-	_, err = db.Exec(`DELETE FROM observations WHERE card = ?1; DELETE FROM digests WHERE card = ?1; DELETE FROM cards WHERE card = ?1;`, cardID)
+	_, err = db.Exec(`DELETE FROM observations WHERE card = ?1; DELETE FROM digests WHERE card = ?1; DELETE FROM vectors WHERE card = ?1; DELETE FROM cards WHERE card = ?1;`, cardID)
+	x.invalidateVectors("")
 	return err
 }
 
@@ -303,7 +321,8 @@ func (x *Index) ForgetProject(projectID string) error {
 	if err != nil {
 		return err
 	}
-	_, err = db.Exec(`DELETE FROM observations WHERE project = ?1; DELETE FROM digests WHERE project = ?1; DELETE FROM cards WHERE project = ?1;`, projectID)
+	_, err = db.Exec(`DELETE FROM observations WHERE project = ?1; DELETE FROM digests WHERE project = ?1; DELETE FROM vectors WHERE project = ?1; DELETE FROM cards WHERE project = ?1;`, projectID)
+	x.invalidateVectors(projectID)
 	return err
 }
 
@@ -419,6 +438,11 @@ func (x *Index) Enforce() (int, error) {
 		return 0, err
 	}
 	removed, _ := result.RowsAffected()
+	if removed > 0 {
+		if err = x.pruneVectors(db); err != nil {
+			return int(removed), err
+		}
+	}
 	return int(removed), nil
 }
 

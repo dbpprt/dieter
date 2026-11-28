@@ -71,6 +71,15 @@ traffic, `<private>…</private>` blocks and common secret formats (API keys,
 tokens, private keys, passwords in URLs) are left out. Vault values never
 reach transcripts in the first place.
 
+A search finds conversations and saved memories by their words and by their
+meaning, so "the assistant keeps getting logged out" finds the conversation
+about HTTP 401 errors. Dieter embeds each conversation's title, prompts and
+final answers with a small language model built into Dieter. It runs on the
+machine itself, uses no account or key, and needs about 60 MB of memory while
+it works, released a few minutes after the last search. The first start after
+an update that changes the model indexes the conversations once more in the
+background; until then, search finds them by their words.
+
 Each machine keeps its own index (`DIETER_HOME/memory/memory.db`). It is not
 copied between machines: a search asks the other machines when it runs. A
 machine that is asleep or offline is missing from the answer until it is back,
@@ -150,8 +159,9 @@ or switch memory.
 - Memory never leaves your machines. Searches between machines use the same
   end-to-end encrypted routes as everything else; the gateway stores nothing
   of it.
-- Indexing and search cost no model usage. Dreams are agent turns and use
-  your plan or key like any conversation; they are off until you turn them on.
+- Indexing and search cost no model usage: the embedding model runs on your
+  machine. Dreams are agent turns and use your plan or key like any
+  conversation; they are off until you turn them on.
 - Everything an agent recalls was written by an agent or a tool. A web page or
   file an agent read can plant misleading text, so agents verify what they
   recall, and you can forget any memory or conversation.

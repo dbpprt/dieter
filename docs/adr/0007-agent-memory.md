@@ -65,8 +65,9 @@ project.
 
 - No new process, port, runtime or credential. The index adds a SQLite file
   per machine (about 0.75 KiB per observation).
-- Recall is keyword search: paraphrases with no shared words can miss (eval
-  E1: hit@3 0.95, hit@1 0.80). Embeddings can be added to the same index later.
+- Recall was keyword search: paraphrases with no shared words could miss
+  (eval E1: hit@3 0.95, hit@1 0.80). [ADR 0008](0008-memory-embeddings.md)
+  adds local embeddings to the same index.
 - Recalled text is untrusted input written by agents. The tools and the
   instructions present it as possibly outdated notes, never as instructions.
 - A machine that is off is missing from recall until it is back; saved
