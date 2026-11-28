@@ -178,7 +178,9 @@ fixes both:
 
 - **Mail offline graphics:** the app itself gave up ("The diagram renderer timed out.").
   Every diagram had 15 s from composition, and several web views start at once. The
-  budget is now 30 s, counted from when the renderer's assets are loaded.
+  budget is now 60 s, counted from when the renderer's assets are loaded: with six
+  web views starting at once, the first open needed nearly 30 s on a hosted simulator,
+  and a 30 s budget still timed out once.
 - **Mail:** `mail-access` on the long new-task form gets the same 60 s scroll timeout as
   Code review.
 
@@ -189,7 +191,8 @@ The run on top of #241 failed three flows whose outcome depended on scroll posit
   to Inbox. The flow now scrolls to the heading below the table first.
 - **Mail offline graphics, iOS:** after reopening the report, the scroll for the
   _rendered_ Mermaid tag went past a diagram that was still rendering and never came
-  back. `common/mermaid-rendered.yaml` stops at the diagram and waits there.
+  back. `common/mermaid-rendered.yaml` stops at the diagram and waits there, longer
+  than the app's render budget.
 - **Agent memory, iOS:** hierarchy reads of 9.5 and 15 s exhausted the 20 s scroll to
   "Start a dream now" while the button was on screen; long-form scrolls get 60 s.
 

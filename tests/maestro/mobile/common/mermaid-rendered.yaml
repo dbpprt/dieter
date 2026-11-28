@@ -9,7 +9,8 @@ appId: ${APP_ID}
       id: "mail-diagram-(loading|mermaid-rendered)"
     direction: DOWN
     timeout: 60000
+# Longer than the app's 60 s render budget, so a slow render is not cut short.
 - extendedWaitUntil:
     visible:
       id: mail-diagram-mermaid-rendered
-    timeout: 60000
+    timeout: 90000

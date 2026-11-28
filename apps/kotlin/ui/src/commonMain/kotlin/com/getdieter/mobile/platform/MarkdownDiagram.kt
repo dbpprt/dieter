@@ -23,7 +23,7 @@ internal object DiagramAssets {
 }
 
 /** How long one diagram may take to render before its source shows instead. */
-private const val RENDER_BUDGET_MILLIS = 30_000L
+private const val RENDER_BUDGET_MILLIS = 60_000L
 
 internal fun diagramScript(kind: String, source: String, dark: Boolean): String =
     "window.dieterMarkdown.renderDiagram(${JsonPrimitive(kind)},${JsonPrimitive(source)},${JsonPrimitive(if (dark) "dark" else "light")},'mail',true).then(r => JSON.stringify({height:r.height,error:r.error,stale:r.stale,rendered:r.renderedBlocks}))"
@@ -50,9 +50,10 @@ internal fun MarkdownDiagram(
             }
         }
         // A message with several diagrams starts a renderer for each at once; on a
-        // slow device they can need well over 15 s, and a timeout here replaces a
-        // chart that would have rendered with its source. The budget runs once the
-        // renderer's assets are loaded, since nothing can render before.
+        // slow device the first can need about 30 s, and a timeout here replaces a
+        // chart that would have rendered with its source. The budget only bounds a
+        // renderer that never answers (a bad source reports its error at once), and
+        // runs once the renderer's assets are loaded, since nothing renders before.
         LaunchedEffect(assets) {
             if (assets == null) return@LaunchedEffect
             delay(RENDER_BUDGET_MILLIS)
