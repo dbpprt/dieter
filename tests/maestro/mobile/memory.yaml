@@ -26,11 +26,13 @@ tags: [smoke]
 - tapOn:
     text: "Edit project.*"
     waitToSettleTimeoutMs: 500
+# A hierarchy read on a hosted simulator can take 10-15 s, so the scrolls on
+# these long forms get a minute.
 - scrollUntilVisible:
     element:
       id: project-memory-dream
     direction: DOWN
-    timeout: 20000
+    timeout: 60000
 - extendedWaitUntil:
     visible: ".*1 saved memory.*"
     timeout: 20000
@@ -100,13 +102,13 @@ tags: [smoke]
 - scrollUntilVisible:
     element:
       id: settings-agent-memory
-    timeout: 20000
+    timeout: 60000
 # Rows under a floating bar (iOS, Android's glass navigation) count as visible
 # before the list has scrolled past them, so scroll to the next section too.
 - scrollUntilVisible:
     element:
       text: "Synced folders"
-    timeout: 20000
+    timeout: 60000
 - tapOn:
     id: settings-agent-memory
     waitToSettleTimeoutMs: 500
@@ -123,7 +125,7 @@ tags: [smoke]
 - scrollUntilVisible:
     element:
       id: memory-save
-    timeout: 20000
+    timeout: 60000
 - tapOn:
     id: memory-save
     waitToSettleTimeoutMs: 500

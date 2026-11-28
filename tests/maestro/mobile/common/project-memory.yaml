@@ -11,7 +11,7 @@ appId: ${APP_ID}
     element:
       id: project-memory
     direction: DOWN
-    timeout: 20000
+    timeout: 60000
 - tapOn:
     id: project-memory
     waitToSettleTimeoutMs: 500
