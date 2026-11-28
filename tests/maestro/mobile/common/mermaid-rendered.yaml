@@ -1,0 +1,15 @@
+# Scrolls down an open report to its Mermaid diagram, the report's first, and
+# waits there until it has rendered. Scrolling on for the rendered tag alone
+# passes a diagram that is still rendering on a slow simulator and never comes
+# back to it.
+appId: ${APP_ID}
+---
+- scrollUntilVisible:
+    element:
+      id: "mail-diagram-(loading|mermaid-rendered)"
+    direction: DOWN
+    timeout: 60000
+- extendedWaitUntil:
+    visible:
+      id: mail-diagram-mermaid-rendered
+    timeout: 60000
