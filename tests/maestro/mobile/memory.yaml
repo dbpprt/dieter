@@ -135,6 +135,11 @@ tags: [smoke]
     element:
       id: memory-save
     timeout: 60000
+# Save ends the list. It counts as visible under a system navigation bar, where
+# a tap on its centre presses Home: scroll on so it rests above the bar.
+- scroll
+- waitForAnimationToEnd:
+    timeout: 3000
 - tapOn:
     id: memory-save
     waitToSettleTimeoutMs: 500
