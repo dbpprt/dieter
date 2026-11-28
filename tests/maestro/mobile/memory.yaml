@@ -12,7 +12,7 @@ tags: [smoke]
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: "Isolated E2E"
-    timeout: 40000
+    timeout: 60000
 - tapOn:
     text: "Isolated E2E"
     waitToSettleTimeoutMs: 500
@@ -27,7 +27,7 @@ tags: [smoke]
     text: "Edit project.*"
     waitToSettleTimeoutMs: 500
 # A hierarchy read on a hosted simulator can take 10-15 s, so the scrolls on
-# these long forms get a minute.
+# these long forms and every wait for the daemon's answer get a minute.
 - scrollUntilVisible:
     element:
       id: project-memory-dream
@@ -44,14 +44,14 @@ tags: [smoke]
     timeout: 3000
 - extendedWaitUntil:
     visible: ".*1 saved memory.*"
-    timeout: 20000
+    timeout: 60000
 - tapOn:
     id: project-memory-dream
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible:
       id: project-memory-open-dream
-    timeout: 30000
+    timeout: 60000
 - takeScreenshot: memory-dream-started
 - tapOn:
     id: project-memory-open-dream
@@ -68,13 +68,13 @@ tags: [smoke]
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: "Dream applied"
-    timeout: 30000
+    timeout: 60000
 - tapOn:
     text: "Undo"
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: "Dream undone"
-    timeout: 30000
+    timeout: 60000
 - takeScreenshot: memory-dream-undone
 # Flows share one fixture and run in file order: move the dream out of Running
 # so later flows find the board as they expect it (as reviewer.yaml does).
@@ -124,7 +124,7 @@ tags: [smoke]
 - extendedWaitUntil:
     visible:
       id: memory-settings
-    timeout: 20000
+    timeout: 60000
 - takeScreenshot: memory-settings
 # Save saves a change only: switch automatic dreams on and save. The fixture
 # runs no dream scheduler, so the setting can stay on.
