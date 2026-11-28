@@ -18,9 +18,11 @@ of **128 minutes**, of which the Kotlin/Native **Release** link takes 73.
 Four changes get PR and main CI to about **38 minutes** (a third), and make the nightly
 green again:
 
-1. **Boot the simulator after the build** (a few lines in `Fastfile`). Today it idles
-   in memory through the whole link on a 7 GB runner. An A/B run confirmed it: Gradle
-   drops from 84 to 37 minutes and the iOS job from 128 to 92 (§6).
+1. **Boot the simulator after the build** (a few lines in `Fastfile`, done in this
+   change). Until now it idled in memory through the whole link on a 7 GB runner. Three
+   runs confirm it: Gradle drops from 84 to 37–42 minutes and the iOS job from 128 to
+   92–100 (§6). The flows then run on a just-booted simulator and take 38–43 minutes
+   instead of 23, which a follow-up (R1b) should win back.
 2. **Debug Kotlin/Native on PRs and main**, Release on the nightly and in a
    release-blocking smoke job. The Release flows exist because of a Release-only crash
    (#142), so that safeguard moves to where shipping happens instead of disappearing.
@@ -105,13 +107,27 @@ Each PR run spends about 172 macOS minutes in two concurrent slots.
 Savings are on the critical path per run. "Measured" means from the data above;
 "estimate" means extrapolated and confirmed in §6.
 
-### R1. Boot the simulator after the build — measured 36 min off every iOS job (done in this change)
+### R1. Boot the simulator after the build — measured 28–36 min off every iOS job (done in this change)
 
 In `lane :e2e`, create the simulator as now but start `bootstatus` only after
 `build_ios_simulator`. The boot (1–2.5 minutes) moves onto the critical path, and
-xcodebuild gets the memory too. Update the README's "boots it while the app builds".
-Risk: low; `boot.wait(300)` already covers slow boots. If the A/B shows less, try
-`org.gradle.jvmargs` at 3g next, then a larger runner (R10).
+xcodebuild gets the memory too. The README now says "boots it once the app is built".
+Risk: low; `boot.wait(300)` already covers slow boots.
+
+The link saves about 43 minutes, but the flows give back up to 20: install → Maestro
+done for the 12 smoke flows took 39, 39 and 43 minutes in the three runs, against 23
+for the last green 12-flow run on the same `xcode-27` image with the old order. Single
+flows are about twice their medians (Task turn 5–6 minutes against 2.7). The likely
+cause is a simulator that boots seconds before the flows and is still busy with
+first-boot work, where before it had the whole link to settle.
+
+### R1b. Boot the simulator between the link and xcodebuild — estimate up to 15 min more
+
+Split `build_ios_simulator` so the boot starts when the Kotlin/Native link is done:
+xcodebuild (13–15 minutes, far less memory than the link) then overlaps the boot and the
+simulator's first-boot work. If the flows still run slow, add a short warm-up (launch
+and quit the app once) before the first flow. Measure install → Maestro done against the
+23-minute baseline; if xcodebuild slows by more than the flows gain, keep R1 as it is.
 
 ### R2. Debug Kotlin/Native on PRs and main; Release where shipping is decided — about 25–30 min more
 
@@ -137,7 +153,10 @@ Add `shard:I/N` to the flow selection in `fastlane/helpers/e2e.rb`, packing gree
 historical duration (Appendix). Use `strategy.max-parallel` so one run never takes more
 than 3 macOS slots.
 
-Smoke flows drop from 23 to about 12 minutes plus 3–4 minutes of shard setup. Nightly
+Each shard boots a fresh simulator, so R1's slow-flow effect applies to every shard:
+boot first, while the artifact downloads and the fixture gateway builds, and run the
+warm-up from R1b if it helps. Smoke flows then drop from 23 to about 12 minutes plus 3–4
+minutes of shard setup. Nightly
 full iPhone drops from 43 to 15–18, and the iPad flows run at all. The biggest effect is
 on reruns: a failed flow reruns one 15-minute shard instead of a 130-minute job.
 
@@ -242,26 +261,30 @@ Release-link jobs (nightly, `release.yml`), and only after R1 is measured.
 
 | Scenario              |            Today |            Phase 1 |       Phase 2 |
 | --------------------- | ---------------: | -----------------: | ------------: |
-| PR touching Kotlin/UI |    109 (p90 163) |                ~70 |       **~38** |
-| main push with iOS    |          118–190 |                ~70 |       **~38** |
+| PR touching Kotlin/UI |    109 (p90 163) |      ~75 (R1: 101) |    **~38–45** |
+| main push with iOS    |          118–190 |                ~75 |    **~38–45** |
 | main push without iOS |               81 |                 ~5 |            ~5 |
 | nightly               | 166, never green | ~140, can be green |           ~75 |
 | release               |      59 (p90 82) |                 59 | ~48 (p90 ~55) |
 
-Reaching a third on PRs and main needs R2. With Release builds kept on PRs, the floor is
-about 60 minutes unless larger runners are bought.
+Phase 1 assumes R1b wins back most of the slow flows. The green PR run with R1 and R4
+alone took 101 minutes from creation to the last job, all of it in `ios`. Reaching a
+third on PRs and main needs R2, and flows at warm-simulator speed in the shards (R1b);
+at today's post-R1 flow speed it is about 45. With Release builds kept on PRs, the floor
+is about 60 minutes unless larger runners are bought.
 
 ## 5. Phases
 
 - **Phase 0 — confirm the two big assumptions (half a day).**
-  1. An `ios_only` run with the boot after the build: done, R1 confirmed (§6). Add a swap sampler (`sysctl vm.swapusage`, `vm_stat`) if the result
-     is ambiguous.
+  1. An `ios_only` run with the boot after the build: done, R1 confirmed (§6). Next,
+     R1b against the 23-minute flow baseline, with a swap sampler (`sysctl
+vm.swapusage`, `vm_stat`) so link and flow slowdowns can be told apart.
   2. The same with `configuration:debug`: Debug link, Debug xcodebuild and per-flow
      times against the Appendix.
-- **Phase 1 — quick wins (1–3 days): R1, R4, R5, R6, R9.** The PR path goes from 109 to
-  about 70; the nightly can turn green; release-notes pushes stop queueing.
-- **Phase 2 — structural (3–5 days): R2, R3, R7, R8.** PR and main reach about 38; the
-  nightly about 75; a flaky flow costs one shard rerun.
+- **Phase 1 — quick wins (1–3 days): R1, R1b, R4, R5, R6, R9.** The PR path goes from
+  109 to about 75; the nightly can turn green; release-notes pushes stop queueing.
+- **Phase 2 — structural (3–5 days): R2, R3, R7, R8.** PR and main reach about 38–45;
+  the nightly about 75; a flaky flow costs one shard rerun.
 - **Phase 3 — optional:** R10, the framework reuse for non-Kotlin follow-ups, and a
   visible flaky-retry mode.
 
@@ -287,6 +310,19 @@ R1 is confirmed. The Release link runs as fast as in the release workflow (31 th
 about 35 here), and the job is 36 minutes shorter. The run failed two flows, Mail
 offline graphics (a render wait) and Code review (the Changes diff wait). The branch is
 `main` plus the boot change only; this change fixes both flows.
+
+The two PR runs of this change repeat it. The second is the first green iOS run in the
+measured window with 12 smoke flows and the new order:
+
+| Run (`ios` job)                                                          | Gradle (pre-link + link) |     xcodebuild + boot | Install → Maestro done (12 flows) | Job | Flows            |
+| ------------------------------------------------------------------------ | -----------------------: | --------------------: | --------------------------------: | --: | ---------------- |
+| [45997500430](https://github.com/dbpprt/dieter/actions/runs/45997500430) |                     79.6 | 9.4 (boot overlapped) |                          **23.0** | 117 | 12/12, old order |
+| [46052306413](https://github.com/dbpprt/dieter/actions/runs/46052306413) |                     37.0 |                    11 |                              39.1 |  92 | 10/12            |
+| [46065666666](https://github.com/dbpprt/dieter/actions/runs/46065666666) |                     40.7 |                    15 |                              38.5 |  97 | 10/12            |
+| [46078186264](https://github.com/dbpprt/dieter/actions/runs/46078186264) |                     41.6 |                    13 |                              43.1 | 101 | **12/12**        |
+
+All four ran on the `xcode-27` image. Gradle keeps the R1 saving; the flows take 16–20
+minutes longer than in the old order, which R1b addresses.
 
 ## Appendix: per-flow Maestro times on CI (median seconds, failures)
 
