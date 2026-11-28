@@ -26,6 +26,16 @@ enum SidebarProjectActivity {
 /// It takes values only, so it redraws when its own project, layout,
 /// selection, or activity changes.
 struct SidebarProjectRow: View, Equatable {
+    /// E2E flows press controls without hovering: they keep the row's
+    /// hover actions (settings, new board) reachable.
+    private static var showsHoverActionsForFlows: Bool {
+        #if DIETER_E2E
+            NativeTestSupport.isE2E
+        #else
+            false
+        #endif
+    }
+
     @Environment(DieterStore.self) private var store
     let project: Dieter_V1_Project
     let projectIDs: [String]
@@ -92,8 +102,7 @@ struct SidebarProjectRow: View, Equatable {
                     store.presentNewBoard(projectID: project.id)
                 }
 
-                // E2E flows press controls without hovering: keep these reachable.
-                if hovering || NativeTestSupport.isE2E {
+                if hovering || Self.showsHoverActionsForFlows {
                     Button {
                         store.presentProjectEditor(projectID: project.id)
                     } label: {
