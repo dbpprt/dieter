@@ -8,6 +8,10 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.7.460
+
 ### Fixed
 
 - **Claude Code turns no longer hang on a lost Dieter tool call.** Rarely,
@@ -16,6 +20,14 @@ copy the **Unreleased** notes into a section named after that exact version
   and the turn waited forever while holding its files. Dieter now notices
   within a minute, resumes the session so the agent can repeat the call, and
   stops the turn with a clear message if it happens again.
+- **Send now works in a conversation that just started.** Sending a queued
+  message at once, or stopping the turn, could fail with "The card is no longer
+  available" until the card appeared in the account's lists. The stop now goes
+  straight to the conversation's machine.
+- **Diagrams in mail render on slower phones.** Each Mermaid or Vega diagram
+  had 15 seconds from the moment the message opened, and a message with several
+  diagrams could show their source instead. Each now has a minute once the
+  offline renderer has loaded.
 
 ## 0.7.459
 
