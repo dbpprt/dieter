@@ -33,6 +33,15 @@ tags: [smoke]
       id: project-memory-dream
     direction: DOWN
     timeout: 60000
+# The button counts as visible under a system navigation bar, where a tap
+# misses it; scroll on to the next section's header.
+- scrollUntilVisible:
+    element:
+      text: "(?i)agent instructions"
+    direction: DOWN
+    timeout: 60000
+- waitForAnimationToEnd:
+    timeout: 3000
 - extendedWaitUntil:
     visible: ".*1 saved memory.*"
     timeout: 20000

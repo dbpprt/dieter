@@ -12,6 +12,9 @@ appId: ${APP_ID}
       id: project-memory
     direction: DOWN
     timeout: 60000
+# The scroll flings: let the sheet come to rest so the tap lands on the switch.
+- waitForAnimationToEnd:
+    timeout: 3000
 - tapOn:
     id: project-memory
     waitToSettleTimeoutMs: 500
