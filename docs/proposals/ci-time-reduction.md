@@ -182,6 +182,17 @@ fixes both:
 - **Mail:** `mail-access` on the long new-task form gets the same 60 s scroll timeout as
   Code review.
 
+The run on top of #241 failed three flows whose outcome depended on scroll position:
+
+- **Mail, Android:** on the 320x640 emulator the audit table opened half under the
+  floating navigation bar, so the swipe from its centre landed on the bar and switched
+  to Inbox. The flow now scrolls to the heading below the table first.
+- **Mail offline graphics, iOS:** after reopening the report, the scroll for the
+  _rendered_ Mermaid tag went past a diagram that was still rendering and never came
+  back. `common/mermaid-rendered.yaml` stops at the diagram and waits there.
+- **Agent memory, iOS:** hierarchy reads of 9.5 and 15 s exhausted the 20 s scroll to
+  "Start a dream now" while the button was on screen; long-form scrolls get 60 s.
+
 Still open: Go `TempDir RemoveAll cleanup: … dieter-home/sync: directory not empty`
 (gateway e2e and some `internal/api` tests). `api.Server` has no close or drain, and
 `topology.Daemon.Close` stops the listeners without waiting for the server's background
