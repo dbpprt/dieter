@@ -27,7 +27,9 @@ tags: [smoke]
 - tapOn:
     text: ".*Open workspace guide.*"
     waitToSettleTimeoutMs: 500
-- assertVisible: ".*One durable conversation.*"
+- extendedWaitUntil:
+    visible: ".*One durable conversation.*"
+    timeout: 30000
 - tapOn:
     text: ".*Read linked guide.*"
     waitToSettleTimeoutMs: 500
@@ -44,10 +46,15 @@ tags: [smoke]
     when:
       platform: iOS
     commands:
-      - assertVisible:
-          id: QLPreviewControllerView
-      - assertVisible:
-          text: Image canvas
+      # Quick Look loads the image out of process: seconds on a hosted simulator.
+      - extendedWaitUntil:
+          visible:
+            id: QLPreviewControllerView
+          timeout: 60000
+      - extendedWaitUntil:
+          visible:
+            text: Image canvas
+          timeout: 30000
 - runFlow:
     when:
       platform: Android

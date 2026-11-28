@@ -21,9 +21,12 @@ tags: [smoke]
       id: mail-open-conversation
     timeout: 30000
 - assertVisible: "Open conversation"
+# Bring the heading below the table on screen, so the whole table is above the
+# floating navigation bar: a swipe from the table's centre must not start on the
+# bar, where it switches tabs.
 - scrollUntilVisible:
     element:
-      text: "Package"
+      text: "Suggested next steps"
     direction: DOWN
     timeout: 30000
 # The last column sits past the right edge on phones.
@@ -39,14 +42,15 @@ tags: [smoke]
       - waitForAnimationToEnd:
           timeout: 2000
 - assertVisible: "Notes"
-# Only the table moved: the paragraph right above it is still in place. (The
-# subject may have scrolled away on small screens to reach the table.)
-- assertVisible: ".*need updates.*"
+# Only the table moved: the heading right below it is still in place. (The
+# subject and the paragraph above the table may have scrolled away on small
+# screens to reach it.)
+- assertVisible: "Suggested next steps"
 - takeScreenshot: mail-message
 - runFlow: common/back.yaml
 - extendedWaitUntil:
     visible: "Invoice migration finished: 12,408 rows moved"
-    timeout: 10000
+    timeout: 30000
 - swipe:
     from:
       text: "Invoice migration finished: 12,408 rows moved"
@@ -54,9 +58,12 @@ tags: [smoke]
 # Undo is timed: tap it immediately instead of spending its lifetime on a
 # separate visibility query and screenshot on a slow simulator. tapOn requires
 # the action to be visible; the following assertion verifies the restoration.
+# A tap taken from a hierarchy read while the snackbar still slides in can miss
+# it; then nothing changes and the tap is repeated.
 - tapOn:
     text: "Undo"
     waitToSettleTimeoutMs: 500
+    retryTapIfNoChange: true
 - extendedWaitUntil:
     visible: "Invoice migration finished: 12,408 rows moved"
     timeout: 40000
@@ -84,6 +91,8 @@ tags: [smoke]
     element:
       id: mail-access
     direction: DOWN
+    # Hosted simulators take seconds per swipe and hierarchy read; the form is long.
+    timeout: 60000
 - takeScreenshot: mail-access
 - tapOn:
     id: chrome-cancel-creation

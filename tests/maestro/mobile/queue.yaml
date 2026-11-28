@@ -60,25 +60,31 @@ tags: [full]
     timeout: 20000
 - takeScreenshot: message-queued
 - assertVisible: "mock-activity-reply"
+# The queued text sits inside a bubble in the queue: a descendant, not a direct
+# child, on Android.
 - assertVisible:
     id: composer-queue
-    containsChild:
-      text: "mock-activity-reply"
+    containsDescendants:
+      - text: "mock-activity-reply"
 - assertNotVisible:
     id: conversation-timeline
-    containsChild:
-      text: "mock-activity-reply"
+    containsDescendants:
+      - text: "mock-activity-reply"
+# Drag the history itself. The timeline spans the whole screen and its centre
+# lies on the queue pinned above the composer (on the 320x640 CI emulator too),
+# so a drag from the element's centre moves nothing; the upper quarter is
+# history on every phone layout.
+- hideKeyboard
 - swipe:
-    from:
-      id: conversation-timeline
-    direction: DOWN
+    start: 50%, 25%
+    end: 50%, 70%
 - extendedWaitUntil:
     visible: "Jump to latest"
     timeout: 5000
 - assertVisible:
     id: composer-queue
-    containsChild:
-      id: queue-send-now-.*
+    containsDescendants:
+      - id: queue-send-now-.*
 - assertVisible:
     id: message-input
 - takeScreenshot: message-queued-scrolled

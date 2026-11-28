@@ -185,6 +185,10 @@ internal constructor(
     private val daemonId: String?
         get() = mutableView.value.daemonId
 
+    /** The machine this conversation streams from, once known. */
+    val owner: String?
+        get() = daemonId
+
     internal fun start() {
         scope.launch { outbox.view.collect { publish() } }
         // Account activity can advance while the full transcript stream is delayed. Observe both
@@ -675,7 +679,7 @@ internal constructor(
         if (!canSteer(messageId)) return false
         steeringMessageId = messageId
         try {
-            return board.cancel(cardId).also { if (!it) steeringMessageId = null }
+            return board.cancel(cardId, daemonId).also { if (!it) steeringMessageId = null }
         } catch (error: Throwable) {
             steeringMessageId = null
             throw error

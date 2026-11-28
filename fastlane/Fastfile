@@ -530,18 +530,21 @@ platform :ios do
         Dieter.capture("xcrun", "simctl", "delete", udid)
         Dieter::Journal.delete(journal)
       end
-      # The boot overlaps the build; hosted runners need up to ~140s.
+      app =
+        build_ios_simulator(
+          configuration: (options[:configuration] || "debug").to_s,
+          evidence: evidence
+        )
+      # Boot only after the build: a simulator booted alongside it idles in
+      # memory through the Kotlin/Native link, which on a 7 GB hosted runner
+      # took 73 minutes instead of 35 (docs/proposals/ci-time-reduction.md).
+      # Hosted runners need up to ~140s to boot.
       boot =
         Dieter::Owned.new(
           ["xcrun", "simctl", "bootstatus", udid, "-b"],
           log: File.join(evidence, "boot.log")
         )
       cleanup.add { boot.stop }
-      app =
-        build_ios_simulator(
-          configuration: (options[:configuration] || "debug").to_s,
-          evidence: evidence
-        )
       raise Dieter::Unavailable, "Simulator #{udid} did not boot" unless boot.wait(300).success?
       Dieter.sh(
         "xcrun",

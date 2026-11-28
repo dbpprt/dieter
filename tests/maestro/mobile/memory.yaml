@@ -12,7 +12,7 @@ tags: [smoke]
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: "Isolated E2E"
-    timeout: 40000
+    timeout: 60000
 - tapOn:
     text: "Isolated E2E"
     waitToSettleTimeoutMs: 500
@@ -26,21 +26,32 @@ tags: [smoke]
 - tapOn:
     text: "Edit project.*"
     waitToSettleTimeoutMs: 500
+# A hierarchy read on a hosted simulator can take 10-15 s, so the scrolls on
+# these long forms and every wait for the daemon's answer get a minute.
 - scrollUntilVisible:
     element:
       id: project-memory-dream
     direction: DOWN
-    timeout: 20000
+    timeout: 60000
+# The button counts as visible under a system navigation bar, where a tap
+# misses it; scroll on to the next section's header.
+- scrollUntilVisible:
+    element:
+      text: "(?i)agent instructions"
+    direction: DOWN
+    timeout: 60000
+- waitForAnimationToEnd:
+    timeout: 3000
 - extendedWaitUntil:
     visible: ".*1 saved memory.*"
-    timeout: 20000
+    timeout: 60000
 - tapOn:
     id: project-memory-dream
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible:
       id: project-memory-open-dream
-    timeout: 30000
+    timeout: 60000
 - takeScreenshot: memory-dream-started
 - tapOn:
     id: project-memory-open-dream
@@ -57,13 +68,13 @@ tags: [smoke]
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: "Dream applied"
-    timeout: 30000
+    timeout: 60000
 - tapOn:
     text: "Undo"
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible: "Dream undone"
-    timeout: 30000
+    timeout: 60000
 - takeScreenshot: memory-dream-undone
 # Flows share one fixture and run in file order: move the dream out of Running
 # so later flows find the board as they expect it (as reviewer.yaml does).
@@ -100,20 +111,20 @@ tags: [smoke]
 - scrollUntilVisible:
     element:
       id: settings-agent-memory
-    timeout: 20000
+    timeout: 60000
 # Rows under a floating bar (iOS, Android's glass navigation) count as visible
 # before the list has scrolled past them, so scroll to the next section too.
 - scrollUntilVisible:
     element:
       text: "Synced folders"
-    timeout: 20000
+    timeout: 60000
 - tapOn:
     id: settings-agent-memory
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
     visible:
       id: memory-settings
-    timeout: 20000
+    timeout: 60000
 - takeScreenshot: memory-settings
 # Save saves a change only: switch automatic dreams on and save. The fixture
 # runs no dream scheduler, so the setting can stay on.
@@ -123,7 +134,12 @@ tags: [smoke]
 - scrollUntilVisible:
     element:
       id: memory-save
-    timeout: 20000
+    timeout: 60000
+# Save ends the list. It counts as visible under a system navigation bar, where
+# a tap on its centre presses Home: scroll on so it rests above the bar.
+- scroll
+- waitForAnimationToEnd:
+    timeout: 3000
 - tapOn:
     id: memory-save
     waitToSettleTimeoutMs: 500

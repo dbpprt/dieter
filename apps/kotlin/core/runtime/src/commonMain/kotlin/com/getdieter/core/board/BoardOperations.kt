@@ -277,12 +277,21 @@ class BoardOperations(
     }
 
     /** Stops the running turn; the card shows "cancelling" until its runtime settles. */
-    suspend fun cancel(cardId: String): Boolean {
-        val card = card(cardId)
+    /**
+     * Stops [cardId]'s running turn on its owner. A conversation that just started can be running
+     * on its machine before the account view lists its card; [knownOwner], the machine its open
+     * conversation streams from, routes the stop meanwhile.
+     */
+    suspend fun cancel(cardId: String, knownOwner: String? = null): Boolean {
+        val shown = store.shownItem(cardId)
+        val owner =
+            shown?.let(::owner)
+                ?: knownOwner
+                ?: throw CoreException(FailureKind.PERMANENT, "The card is no longer available.")
         return mutate(
             cardId,
             CardOperation.CANCELLING,
-            owner(card),
+            owner,
             FieldOverlay(
                 cardId,
                 { if (Runtimes.isActive(it.runtime)) it.copy(runtime = "cancelling") else it },

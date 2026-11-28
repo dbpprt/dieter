@@ -248,7 +248,8 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
             return done
         }
         command.cancel_card?.let {
-            board { cancel(it.card_id) }
+            val owner = runtime.conversations.session(it.card_id)?.owner
+            board { cancel(it.card_id, owner) }
             return done
         }
         command.add_card_label?.let {

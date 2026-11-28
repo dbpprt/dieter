@@ -83,6 +83,7 @@ tags: [smoke]
 - scrollUntilVisible:
     element:
       id: provider-remove
+    timeout: 40000
 - scroll
 - tapOn:
     id: provider-remove
