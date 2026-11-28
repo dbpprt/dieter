@@ -11,6 +11,14 @@ import {
 } from "./capabilities.mjs";
 import { promptWithLocalAttachments } from "./local-attachments.mjs";
 import { createClaudeDiagnosticTracker } from "./claude-resilience.mjs";
+import {
+  createLostHostToolDetector,
+  hostToolDispatchTimeoutMs,
+  lostHostToolFailure,
+  lostHostToolNotice,
+  lostHostToolPrompt,
+  maxLostHostToolRetries,
+} from "./lost-host-tool.mjs";
 
 // Only Node built-ins and the light local modules above load before the mock
 // fast path. The harness SDKs below are imported once a real turn needs them:
@@ -722,22 +730,55 @@ try {
     capabilityCollector.consumeUIChunk(chunk);
     send({ type: "chunk", chunk });
   };
+  // A Dieter host tool call that Claude Code started but that never reached
+  // this worker stops the stream; the session resumes (lost-host-tool.mjs).
+  const dispatchTimeoutMs =
+    Number.isFinite(request.hostToolDispatchTimeoutMs) && request.hostToolDispatchTimeoutMs > 0
+      ? request.hostToolDispatchTimeoutMs
+      : hostToolDispatchTimeoutMs;
   async function streamResult(result, summary, diagnosticTurn) {
     const messageMetadata = createMessageMetadataTracker({
       createdAt,
       contextWindowTokens,
       reportModelId: adapter === "claude-code",
     });
+    const lostHostTool =
+      adapter === "claude-code"
+        ? createLostHostToolDetector({ timeoutMs: dispatchTimeoutMs })
+        : undefined;
+    const lostHostToolTimer = lostHostTool
+      ? setInterval(
+          () => {
+            const lost = lostHostTool.lost();
+            if (!lost || summary.lostHostTool) return;
+            summary.lostHostTool = lost;
+            summary.abortAttempt?.();
+          },
+          Math.min(5000, Math.max(20, Math.floor(dispatchTimeoutMs / 4))),
+        )
+      : undefined;
+    lostHostToolTimer?.unref?.();
     const stream = toUIMessageStream({
       stream: observeProviderUsage(result.stream, (part) => {
         if (part?.type === "error") summary.streamError = part.error;
+        lostHostTool?.observe(part);
       }),
       onError: harnessErrorMessage,
       generateMessageId: () => request.responseMessageId,
       messageMetadata,
     });
+    try {
+      await consumeUIStream(stream, summary, diagnosticTurn);
+    } finally {
+      if (lostHostToolTimer) clearInterval(lostHostToolTimer);
+    }
+  }
+  async function consumeUIStream(stream, summary, diagnosticTurn) {
     for await (let chunk of stream) {
       if (summary.skipStart && chunk.type === "start") continue;
+      // The stopped attempt's ending belongs to no answer: the resumed stream
+      // continues the same response.
+      if (summary.lostHostTool && ["abort", "finish", "error"].includes(chunk.type)) continue;
       // The Go host owns the semantic distinction between a user interrupt
       // and a process-restart suspension. Suppress the SDK's local abort frame
       // here; Dieter appends one for a real cancel, while a restart preserves
@@ -787,33 +828,59 @@ try {
     const summary = createClaudeTurnSummary();
     summary.skipStart = skipStart;
     if (deferInitialError) summary.deferredChunks = [];
+    // One attempt can be stopped (a lost host tool call) without cancelling
+    // the turn; cancelling the turn stops every attempt.
+    const attempt = new AbortController();
+    summary.abortAttempt = () => attempt.abort(new Error("host tool call lost"));
+    const signal = AbortSignal.any([controller.signal, attempt.signal]);
     const diagnosticTurn = adapter === "claude-code" ? claudeDiagnostics.beginTurn() : undefined;
     let streamError;
     try {
-      const result = await start();
+      const result = await start(signal);
       onStarted?.();
       await streamResult(result, summary, diagnosticTurn);
     } catch (error) {
       streamError = error;
     }
     const providerFailure = diagnosticTurn ? claudeDiagnostics.endTurn(diagnosticTurn) : undefined;
+    // The stopped attempt's abort is expected; the caller resumes the session.
+    if (summary.lostHostTool && !controller.signal.aborted) return summary;
     if (providerFailure)
       throw new Error(providerFailure, streamError ? { cause: streamError } : undefined);
     if (streamError) throw streamError;
     return summary;
   }
   async function streamPrompt(prompt, options) {
-    return runStream(
-      () => agent.stream({ session, prompt, abortSignal: controller.signal }),
-      options,
-    );
+    return runStream((abortSignal) => agent.stream({ session, prompt, abortSignal }), options);
   }
+  let lostHostToolRetries = 0;
+  // Resume the session after a lost host tool call, at most twice per turn,
+  // within the same response.
+  async function recoverLostHostTool(summary) {
+    while (summary?.lostHostTool && !controller.signal.aborted && !suspending) {
+      const { toolName } = summary.lostHostTool;
+      if (lostHostToolRetries >= maxLostHostToolRetries)
+        throw new Error(lostHostToolFailure(toolName));
+      lostHostToolRetries += 1;
+      console.error(
+        `claude-code lost the ${toolName} host tool call; resuming the session (${lostHostToolRetries}/${maxLostHostToolRetries})`,
+      );
+      const noticeId = `${request.responseMessageId}-lost-host-tool-${lostHostToolRetries}`;
+      emitChunk({ type: "text-start", id: noticeId });
+      emitChunk({ type: "text-delta", id: noticeId, delta: lostHostToolNotice(toolName) });
+      emitChunk({ type: "text-end", id: noticeId });
+      summary = await streamPrompt(lostHostToolPrompt(toolName), { skipStart: true });
+    }
+    return summary;
+  }
+  const streamPromptRecovering = async (prompt, options) =>
+    recoverLostHostTool(await streamPrompt(prompt, options));
   let primarySummary;
   if (request.continue) {
     if (!sessionOptions.continueFrom)
       throw new Error("Dieter restart recovery is missing the suspended turn continuation");
-    primarySummary = await runStream(() =>
-      agent.continueStream({ session, abortSignal: controller.signal }),
+    primarySummary = await runStream((abortSignal) =>
+      agent.continueStream({ session, abortSignal }),
     );
   } else {
     const mayNeedFreshCodexThread = adapter === "codex" && Boolean(sessionOptions.resumeFrom);
@@ -880,6 +947,7 @@ try {
       primarySummary.deferredChunks = undefined;
     }
   }
+  primarySummary = await recoverLostHostTool(primarySummary);
   if (primarySummary.authFailure && !controller.signal.aborted) {
     claudeAuthRetried = true;
     console.error(
@@ -889,7 +957,7 @@ try {
       (await retryClaudeAuthFailure({
         adapter,
         authFailure: primarySummary.authFailure,
-        retry: streamPrompt,
+        retry: streamPromptRecovering,
       })) ?? primarySummary;
   }
   primarySummary = await retryEmptyClaudeResume({
@@ -897,7 +965,7 @@ try {
     hasResumeSession: Boolean(request.session),
     continuing: request.continue === true,
     firstSummary: primarySummary,
-    retry: streamPrompt,
+    retry: streamPromptRecovering,
   });
   // Continue the same durable session once and keep one logical UI response.
   if (
@@ -909,7 +977,7 @@ try {
       summary: primarySummary,
     })
   ) {
-    await streamPrompt(
+    await streamPromptRecovering(
       "Continue the current task. Use the completed subagent results and provide the final answer requested by the user. Do not launch replacement subagents unless one failed.",
     );
   }

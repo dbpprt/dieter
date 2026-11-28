@@ -8,7 +8,14 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ## Unreleased
 
-Nothing yet.
+### Fixed
+
+- **Claude Code turns no longer hang on a lost Dieter tool call.** Rarely,
+  Claude Code started one of Dieter's tools (background processes, agent
+  memory, code review, presenting files) but the call never reached Dieter,
+  and the turn waited forever while holding its files. Dieter now notices
+  within a minute, resumes the session so the agent can repeat the call, and
+  stops the turn with a clear message if it happens again.
 
 ## 0.7.459
 
