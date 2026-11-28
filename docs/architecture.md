@@ -236,7 +236,9 @@ internal/
                          scanner, peer loops and pulls, client registry, folder-member
                          records, trash sweeper, status and change-stream heads
   memory/                agent memory rules without I/O: observations from transcripts,
-                         secret scrubbing, query terms, similarity
+                         secret scrubbing, query terms, similarity; embed/ (the recall
+                         text encoder: all-MiniLM-L6-v2 int8 weights in the binary,
+                         Accelerate via purego on macOS, Go SIMD kernels elsewhere)
   host/memory/           agent memory service, background work started only by dieter
                          serve: indexing finished turns, recall across daemons, saved
                          memories, dream scheduling, validation, apply and undo

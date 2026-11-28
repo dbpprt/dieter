@@ -8,6 +8,11 @@ min_version = "2026.10.13"
 lockfile = true
 lockfile_platforms = ["macos-arm64", "macos-x64", "linux-x64", "linux-arm64"]
 
+[env]
+# Go's portable SIMD (simd, simd/archsimd) for the memory embedding kernels
+# (internal/memory/embed); builds without it fall back to plain Go.
+GOEXPERIMENT = "simd"
+
 [tools]
 # Languages. Ruby reads .ruby-version and Go reads go.mod.
 ruby = "{{ read_file(path='.ruby-version') | trim }}"

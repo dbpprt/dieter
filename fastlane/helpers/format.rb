@@ -33,6 +33,9 @@ module Dieter
       "prettier" => %w[.js .mjs .css .json .yaml .yml .md .html .webmanifest]
     }.freeze
     MAX_BYTES = 5 * 1024 * 1024
+    # Source assets that must live in the tree although they are large: the
+    # embedded agent memory model (go:embed; docs/adr/0008-memory-embeddings.md).
+    LARGE_ASSETS = %w[internal/memory/embed/minilm/model.safetensors].freeze
 
     module_function
 
@@ -135,7 +138,9 @@ module Dieter
     def integrity(tree, paths)
       paths.filter_map do |path|
         file = File.join(tree, path)
-        next "#{path}: exceeds 5 MiB; keep build output out of Git" if File.size(file) > MAX_BYTES
+        if File.size(file) > MAX_BYTES && !LARGE_ASSETS.include?(path)
+          next "#{path}: exceeds 5 MiB; keep build output out of Git"
+        end
         # An empty file reads as nil; it has nothing to check.
         next if path.match?(EXCLUDED) || File.binread(file, 8000).to_s.include?("\0")
         text = File.binread(file)

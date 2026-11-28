@@ -1,0 +1,61 @@
+{
+  "backend": "accelerate",
+  "date": "2026-11-28T15:54:01Z",
+  "fixture": {
+    "conversations": 16,
+    "embedMsPerText": 1.8541666666666667,
+    "embedSeconds": 0.089,
+    "hybrid": {
+      "mode": "hybrid",
+      "hitAt1": 0.9,
+      "hitAt3": 1,
+      "hitAt5": 1,
+      "mrr": 0.95,
+      "ranks": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 1],
+      "queryMsP50": 1.62
+    },
+    "indexSeconds": 0.009,
+    "keyword": {
+      "mode": "keyword",
+      "hitAt1": 0.8,
+      "hitAt3": 0.95,
+      "hitAt5": 1,
+      "mrr": 0.885,
+      "ranks": [5, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 1],
+      "queryMsP50": 0.169
+    },
+    "texts": 48
+  },
+  "history": {
+    "conversations": 141,
+    "embedMsPerText": 6.79317697228145,
+    "embedSeconds": 9.558,
+    "hybrid": {
+      "mode": "hybrid",
+      "hitAt1": 0.927,
+      "hitAt3": 0.976,
+      "hitAt5": 0.976,
+      "mrr": 0.951,
+      "ranks": [
+        1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 2
+      ],
+      "queryMsP50": 42.603
+    },
+    "indexSeconds": 6.037,
+    "keyword": {
+      "mode": "keyword",
+      "hitAt1": 0.707,
+      "hitAt3": 0.902,
+      "hitAt5": 0.976,
+      "mrr": 0.814,
+      "ranks": [
+        1, 1, 8, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 3, 1, 1, 5, 1, 2, 1, 1, 1, 1, 2, 1, 1, 5, 1,
+        1, 1, 1, 1, 1, 1, 2, 2, 3, 5
+      ],
+      "queryMsP50": 40.38
+    },
+    "texts": 1407
+  },
+  "model": "all-MiniLM-L6-v2@1110a243/int8.1"
+}

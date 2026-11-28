@@ -939,6 +939,7 @@ platform :mac do
       "./cmd/dieter",
       env: {
         "CGO_ENABLED" => "0",
+        "GOEXPERIMENT" => "simd",
         "GOOS" => "darwin",
         "GOARCH" => "arm64"
       }
@@ -1118,6 +1119,7 @@ lane :server do
       package,
       env: {
         "CGO_ENABLED" => "0",
+        "GOEXPERIMENT" => "simd",
         "GOOS" => "linux",
         "GOARCH" => arch
       }

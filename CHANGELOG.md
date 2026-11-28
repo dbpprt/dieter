@@ -8,7 +8,17 @@ copy the **Unreleased** notes into a section named after that exact version
 
 ## Unreleased
 
-Nothing yet.
+### Added
+
+- **Agent memory finds earlier work by meaning, not only by words.** Asking
+  "the assistant keeps getting logged out" now finds the conversation about
+  HTTP 401 errors, and saved memories are matched the same way. On this
+  project's history, the right conversation comes first for 93% of questions,
+  up from 71%. A small language model built into Dieter embeds each
+  conversation's title, prompts and final answers. It runs on your machine,
+  needs no account or key, and keeps about 60 MB in memory only while memory
+  is in use. After the update, each machine indexes its memory conversations
+  once more in the background.
 
 ## 0.7.460
 

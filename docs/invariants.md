@@ -93,7 +93,8 @@ invariant, it is named; keep it passing rather than weakening it.
   indexes only the memory-enabled conversations it owns into
   `DIETER_HOME/memory/memory.db`, a derived index that is never replicated and
   that a reindex rebuilds; secrets and `<private>` blocks are scrubbed before
-  indexing. Recall asks other daemons only over the roster-pinned peer
+  indexing. Recall's embeddings are computed in the daemon by the model built
+  into the binary, never downloaded or sent anywhere. Recall asks other daemons only over the roster-pinned peer
   carriers, bounded (8 peers, 3 s), and names the ones that did not answer.
   Saved memories are KV records in the namespace `memory` that only daemons
   write (`internal/host/memory`, `MemoryService`). Agent turns recall and save

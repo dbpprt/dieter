@@ -33,6 +33,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
+  # Go SIMD kernels of the memory embeddings (internal/memory/embed), as in
+  # release builds; the go job also tests the plain-Go fallback.
+  GOEXPERIMENT: simd
   FASTLANE_DISABLE_COLORS: "1"
   FASTLANE_HIDE_TIMESTAMP: "true"
   FASTLANE_OPT_OUT_USAGE: "true"
@@ -146,6 +149,12 @@ jobs:
           mkdir -p tmp/junit
           gotestsum --format github-actions --junitfile tmp/junit/go.xml --jsonfile tmp/go-test.json -- \
             -timeout 15m -shuffle=on -coverprofile=tmp/coverage.out ./cmd/... ./internal/... ./tools/...
+      - name: Plain-Go embedding kernels
+        env:
+          GOEXPERIMENT: ""
+        run: |
+          go vet ./internal/memory/embed/
+          go test -count=1 ./internal/memory/embed/
       - name: Coverage summary
         if: always() && hashFiles('tmp/go-test.json') != ''
         run: |
